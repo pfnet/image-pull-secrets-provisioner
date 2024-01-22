@@ -1,0 +1,19 @@
+name: Check if generated files are up to date
+on:
+  pull_request:
+jobs:
+  check-generated:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+    - uses: actions/checkout@v4
+    - uses: actions/setup-go@v5
+      with:
+        go-version-file: go.mod
+    - run: |
+        # Generate files.
+        make manifests generate credits
+
+        # Check if the worktree is clean.
+        git add .
+        git diff --staged --quiet

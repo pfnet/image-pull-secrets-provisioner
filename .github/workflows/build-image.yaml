@@ -1,0 +1,11 @@
+name: Test building container image
+on:
+  pull_request:
+jobs:
+  build-image:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+    - uses: actions/checkout@v4
+    - run: |
+        make docker-build
