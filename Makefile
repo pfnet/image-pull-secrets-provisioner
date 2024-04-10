@@ -182,4 +182,5 @@ $(ENVTEST): $(LOCALBIN)
 
 .PHONY: credits
 credits: ## Generate credit files.
+	rm -rf credits || true
 	docker build . -f hack/credits.Dockerfile --progress=plain --output=.
