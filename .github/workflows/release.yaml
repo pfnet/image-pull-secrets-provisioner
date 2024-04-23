@@ -2,6 +2,12 @@ name: Release
 on:
   # Dispatched by tagpr workflow.
   workflow_dispatch:
+
+inputs:
+  platform:
+    default: linux/arm64
+    required: false
+    description: The target build platform
 jobs:
   release:
     runs-on: ubuntu-latest
@@ -19,4 +25,6 @@ jobs:
     - uses: docker/build-push-action@v5
       with:
         push: true
-        tags: ghcr.io/${{ github.repository }}:${{ github.ref_name }}
+        build-args:
+          TARGETARCH=linux/arm64
+        tags: ghcr.io/${{ github.repository }}:arm64-${{ github.ref_name }}
