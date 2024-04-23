@@ -2,12 +2,6 @@ name: Release
 on:
   # Dispatched by tagpr workflow.
   workflow_dispatch:
-
-inputs:
-  platform:
-    default: linux/arm64
-    required: false
-    description: The target build platform
 jobs:
   release:
     runs-on: ubuntu-latest
