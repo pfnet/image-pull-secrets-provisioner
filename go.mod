@@ -3,13 +3,13 @@ module github.com/pfnet/image-pull-secrets-provisioner
 go 1.21
 
 require (
-	github.com/aws/aws-sdk-go-v2/credentials v1.17.11
+	github.com/aws/aws-sdk-go-v2/credentials v1.17.13
 	github.com/aws/aws-sdk-go-v2/service/ecr v1.27.4
-	github.com/aws/aws-sdk-go-v2/service/sts v1.28.6
+	github.com/aws/aws-sdk-go-v2/service/sts v1.28.7
 	github.com/go-logr/logr v1.4.1
 	github.com/google/go-cmp v0.6.0
-	github.com/onsi/ginkgo/v2 v2.17.2
-	github.com/onsi/gomega v1.33.0
+	github.com/onsi/ginkgo/v2 v2.17.3
+	github.com/onsi/gomega v1.33.1
 	golang.org/x/oauth2 v0.19.0
 	google.golang.org/api v0.176.1
 	k8s.io/api v0.28.8
