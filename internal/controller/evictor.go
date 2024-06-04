@@ -238,14 +238,14 @@ func (e *evictor) listPodsToEvict(
 
 	targets := []*corev1.Pod{}
 	for _, pod := range pods.Items {
-		pod := &pod
-		if e.hasImagePullSecret(pod, secret) {
+		pod := pod
+		if e.hasImagePullSecret(&pod, secret) {
 			continue
 		}
 
-		if e.isImagePullFailing(pod) {
-			targets = append(targets, pod)
-		} else if e.canFailImagePullLater(pod) {
+		if e.isImagePullFailing(&pod) {
+			targets = append(targets, &pod)
+		} else if e.canFailImagePullLater(&pod) {
 			requeue = true
 		}
 	}
