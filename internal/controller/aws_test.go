@@ -39,7 +39,6 @@ func TestAWSExtractRegion(t *testing.T) {
 			wantErr:  true,
 		},
 	} {
-		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
