@@ -238,7 +238,6 @@ func (e *evictor) listPodsToEvict(
 
 	targets := []*corev1.Pod{}
 	for _, pod := range pods.Items {
-		pod := pod
 		if e.hasImagePullSecret(&pod, secret) {
 			continue
 		}

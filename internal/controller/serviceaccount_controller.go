@@ -431,12 +431,11 @@ func (r *serviceAccountReconciler) listImagePullSecretsToCleanup(
 
 	targets := []*corev1.Secret{}
 	for _, secret := range secrets.Items {
-		secret := &secret
 		if secret.GetName() == inUse {
 			continue
 		}
 
-		targets = append(targets, secret)
+		targets = append(targets, &secret)
 	}
 
 	return targets, nil
