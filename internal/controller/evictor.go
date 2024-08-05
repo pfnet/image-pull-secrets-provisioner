@@ -299,10 +299,13 @@ func (e *evictor) canFailImagePullLater(pod *corev1.Pod) bool {
 		return true
 	}
 
-	// A container's status is ContainerCreating => the container creation (including image pull) is in progress.
+	// A container's status is PodInitializing or ContainerCreating
+	// => the container creation (including image pull) is in progress.
 	for _, status := range append(pod.Status.InitContainerStatuses, pod.Status.ContainerStatuses...) {
-		if w := status.State.Waiting; w != nil && w.Reason == "ContainerCreating" {
-			return true
+		if w := status.State.Waiting; w != nil {
+			if w.Reason == "PodInitializing" || w.Reason == "ContainerCreating" {
+				return true
+			}
 		}
 	}
 
