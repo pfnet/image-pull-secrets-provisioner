@@ -113,6 +113,21 @@ rules:
    See also [Configure Service Accounts for Pods | Kubernetes](https://kubernetes.io/docs/tasks/configure-pod-container/configure-service-account/)
 4. The pod will be able to pull container images from the registry
 
+## Image pull secret name
+
+By default, image pull secrets provisioner creates an image pull secret with the name `imagepullsecret-SERVICE-ACCOUNT-NAME`.
+If you want to use a different name, you can specify it in the ServiceAccount's annotation.
+
+```yaml
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  namespace: NAMESPACE
+  name: SERVICE-ACCOUNT-NAME
+  annotations:
+    imagepullsecrets.preferred.jp/secret-name: SECRET-NAME
+```
+
 ## Pod eviction
 
 Image pull secrets added to a ServiceAccount's `.imagePullSecrets` field do *not* apply to existing pods using the ServiceAccount.

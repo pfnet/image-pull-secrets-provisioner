@@ -31,6 +31,8 @@ const (
 	annotationKeyGoogleWIDP = metadataKeyPrefix + "googlecloud-workload-identity-provider"
 	annotationKeyGoogleSA   = metadataKeyPrefix + "googlecloud-service-account-email"
 
+	annotationKeySecretName = metadataKeyPrefix + "secret-name"
+
 	// Annotation for Secrets to store the expiration time.
 	annotationKeyExpiresAt = metadataKeyPrefix + "expires-at"
 
