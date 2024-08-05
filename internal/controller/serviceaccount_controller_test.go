@@ -208,9 +208,9 @@ var _ = Describe("ServiceAccountReconciler", func() {
 				outdated = &secrets.Items[0]
 			}).Should(Succeed())
 
-			// Change the config for image pull secret provisioning.
+			// Change the name of Secret to provision.
 			orig := sa.DeepCopy()
-			sa.Annotations["imagepullsecrets.preferred.jp/googlecloud-service-account-email"] = "other@example.iam.gserviceaccount.com"
+			sa.Annotations["imagepullsecrets.preferred.jp/secret-name"] = "imagepullsecret-2"
 			Expect(k8sClient.Patch(ctx, sa, client.StrategicMergeFrom(orig))).NotTo(HaveOccurred())
 
 			// Test that a new Secret is created and the outdated Secret is deleted.
