@@ -187,6 +187,7 @@ func (e *evictor) SetupWithManager(mgr ctrl.Manager) error {
 
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&corev1.ServiceAccount{}, builder.WithPredicates(predicate.NewPredicateFuncs(pred))).
+		Named("evictor").
 		Complete(e)
 }
 
