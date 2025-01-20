@@ -6,7 +6,7 @@ toolchain go1.23.4
 
 require (
 	github.com/aws/aws-sdk-go-v2/credentials v1.17.53
-	github.com/aws/aws-sdk-go-v2/service/ecr v1.36.7
+	github.com/aws/aws-sdk-go-v2/service/ecr v1.38.6
 	github.com/aws/aws-sdk-go-v2/service/sts v1.33.8
 	github.com/go-logr/logr v1.4.2
 	github.com/google/go-cmp v0.6.0
