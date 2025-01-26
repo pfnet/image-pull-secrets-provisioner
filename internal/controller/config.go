@@ -17,11 +17,8 @@ limitations under the License.
 package controller
 
 import (
-	"fmt"
-	"hash/fnv"
-
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/util/rand"
+	"k8s.io/apimachinery/pkg/util/validation"
 )
 
 // Helpers for config annotations.
@@ -50,23 +47,15 @@ func hasConfig(sa *corev1.ServiceAccount) bool {
 	return false
 }
 
-func configHash(sa *corev1.ServiceAccount) string {
-	hasher := fnv.New32a()
-
-	for _, key := range []string{
-		annotationKeyRegistry,
-		annotationKeyAudience,
-		annotationKeyAWSRoleARN,
-		annotationKeyGoogleWIDP,
-		annotationKeyGoogleSA,
-	} {
-		hasher.Write([]byte(sa.Annotations[key]))
+func secretName(sa *corev1.ServiceAccount) string {
+	if name, ok := sa.Annotations[annotationKeySecretName]; ok {
+		return name
 	}
 
-	return rand.SafeEncodeString(fmt.Sprint(hasher.Sum32()))
-}
+	name := "imagepullsecret-" + sa.GetName()
+	if len(name) > validation.DNS1123SubdomainMaxLength {
+		name = name[:validation.DNS1123SubdomainMaxLength]
+	}
 
-func secretName(sa *corev1.ServiceAccount) string {
-	// TODO: Consider name confliction with manual creation or other provisioning system.
-	return fmt.Sprintf("imagepullsecret-%s-%s", sa.GetName(), configHash(sa))
+	return name
 }

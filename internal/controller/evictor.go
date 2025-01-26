@@ -187,6 +187,7 @@ func (e *evictor) SetupWithManager(mgr ctrl.Manager) error {
 
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&corev1.ServiceAccount{}, builder.WithPredicates(predicate.NewPredicateFuncs(pred))).
+		Named("evictor").
 		Complete(e)
 }
 
@@ -238,14 +239,13 @@ func (e *evictor) listPodsToEvict(
 
 	targets := []*corev1.Pod{}
 	for _, pod := range pods.Items {
-		pod := &pod
-		if e.hasImagePullSecret(pod, secret) {
+		if e.hasImagePullSecret(&pod, secret) {
 			continue
 		}
 
-		if e.isImagePullFailing(pod) {
-			targets = append(targets, pod)
-		} else if e.canFailImagePullLater(pod) {
+		if e.isImagePullFailing(&pod) {
+			targets = append(targets, &pod)
+		} else if e.canFailImagePullLater(&pod) {
 			requeue = true
 		}
 	}
@@ -300,10 +300,13 @@ func (e *evictor) canFailImagePullLater(pod *corev1.Pod) bool {
 		return true
 	}
 
-	// A container's status is ContainerCreating => the container creation (including image pull) is in progress.
+	// A container's status is PodInitializing or ContainerCreating
+	// => the container creation (including image pull) is in progress.
 	for _, status := range append(pod.Status.InitContainerStatuses, pod.Status.ContainerStatuses...) {
-		if w := status.State.Waiting; w != nil && w.Reason == "ContainerCreating" {
-			return true
+		if w := status.State.Waiting; w != nil {
+			if w.Reason == "PodInitializing" || w.Reason == "ContainerCreating" {
+				return true
+			}
 		}
 	}
 
