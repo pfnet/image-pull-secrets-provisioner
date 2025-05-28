@@ -1,8 +1,6 @@
 module github.com/pfnet/image-pull-secrets-provisioner
 
-go 1.23.0
-
-toolchain go1.23.4
+go 1.23.8
 
 require (
 	github.com/aws/aws-sdk-go-v2/credentials v1.17.67
