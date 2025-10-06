@@ -17,6 +17,8 @@ limitations under the License.
 package controller
 
 import (
+	"fmt"
+
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/util/validation"
 )
@@ -37,7 +39,7 @@ func hasConfig(sa *corev1.ServiceAccount) bool {
 		return true
 	}
 
-	// Google.
+	// Google (original backward-compatible logic: just non-empty single annotation string check).
 	if sa.Annotations[annotationKeyGoogleWIDP] != "" {
 		if sa.Annotations[annotationKeyGoogleSA] != "" {
 			return true
@@ -58,4 +60,13 @@ func secretName(sa *corev1.ServiceAccount) string {
 	}
 
 	return name
+}
+
+func secretNameIndexed(sa *corev1.ServiceAccount, idx int) string {
+	if idx <= 0 { // index 0 uses the base naming rule
+		return secretName(sa)
+	}
+	base := secretName(sa)
+	suffix := fmt.Sprintf("-%d", idx)
+	return base + suffix
 }
