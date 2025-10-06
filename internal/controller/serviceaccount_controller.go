@@ -102,20 +102,15 @@ func (r *serviceAccountReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	var requeueAt time.Time
 
 	if hasConfig(sa) {
-		emails := []string{}
+		var emails []string
 		if sa.Annotations[annotationKeyGoogleWIDP] != "" { // Google
-			parsed := parseGoogleServiceAccountEmails(sa)
-			if len(parsed) == 0 { // fallback
-				parsed = []string{sa.Annotations[annotationKeyGoogleSA]}
-			}
-			emails = parsed
+			emails = parseGoogleServiceAccountEmails(sa)
 		} else { // AWS
 			emails = []string{""}
 		}
-		names := secretNamesFor(sa, emails)
 		earliest := time.Time{}
 		for i, email := range emails {
-			name := names[i]
+			name := secretNameIndexed(sa, i)
 			l := logger.WithValues("secret", name)
 			if len(emails) > 1 {
 				l = l.WithValues("gsaIndex", i)
@@ -183,7 +178,6 @@ func (r *serviceAccountReconciler) shouldCreateOrRefreshImagePullSecret(
 
 	// Check if the image pull secret exists.
 	secretKey := client.ObjectKey{Namespace: sa.GetNamespace(), Name: name}
-	logger = logger.WithValues("secret", secretKey.Name)
 
 	secret := &corev1.Secret{}
 	if err := r.Get(ctx, secretKey, secret); err != nil {
@@ -425,18 +419,14 @@ func (r *serviceAccountReconciler) listImagePullSecretsToCleanup(
 
 	namesInUse := map[string]struct{}{}
 	if hasConfig(sa) {
-		emails := []string{}
+		var emails []string
 		if sa.Annotations[annotationKeyGoogleWIDP] != "" {
-			parsed := parseGoogleServiceAccountEmails(sa)
-			if len(parsed) == 0 {
-				parsed = []string{sa.Annotations[annotationKeyGoogleSA]}
-			}
-			emails = parsed
+			emails = parseGoogleServiceAccountEmails(sa)
 		} else {
 			emails = []string{""}
 		}
-		for _, n := range secretNamesFor(sa, emails) {
-			namesInUse[n] = struct{}{}
+		for i := range emails {
+			namesInUse[secretNameIndexed(sa, i)] = struct{}{}
 		}
 	}
 	targets := []*corev1.Secret{}
@@ -448,19 +438,6 @@ func (r *serviceAccountReconciler) listImagePullSecretsToCleanup(
 		targets = append(targets, sec)
 	}
 	return targets, nil
-}
-
-func secretNamesFor(sa *corev1.ServiceAccount, emails []string) []string {
-	base := secretName(sa)
-	if len(emails) <= 1 {
-		return []string{base}
-	}
-	names := make([]string, len(emails))
-	names[0] = base
-	for i := 1; i < len(emails); i++ {
-		names[i] = fmt.Sprintf("%s-%d", base, i)
-	}
-	return names
 }
 
 func (r *serviceAccountReconciler) detachImagePullSecret(
