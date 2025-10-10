@@ -39,7 +39,7 @@ func hasConfig(sa *corev1.ServiceAccount) bool {
 		return true
 	}
 
-	// Google (original backward-compatible logic: just non-empty single annotation string check).
+	// Google.
 	if sa.Annotations[annotationKeyGoogleWIDP] != "" {
 		if sa.Annotations[annotationKeyGoogleSA] != "" {
 			return true
