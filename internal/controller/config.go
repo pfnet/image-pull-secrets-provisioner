@@ -17,8 +17,6 @@ limitations under the License.
 package controller
 
 import (
-	"fmt"
-
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/util/validation"
 )
@@ -60,17 +58,4 @@ func secretName(sa *corev1.ServiceAccount) string {
 	}
 
 	return name
-}
-
-func secretNameIndexed(sa *corev1.ServiceAccount, idx int) string {
-	if idx <= 0 {
-		return secretName(sa)
-	}
-	base := secretName(sa)
-	suffix := fmt.Sprintf("-%d", idx)
-	max := validation.DNS1123SubdomainMaxLength
-	if len(base)+len(suffix) > max {
-		base = base[:max-len(suffix)]
-	}
-	return base + suffix
 }
