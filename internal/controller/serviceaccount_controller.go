@@ -241,20 +241,29 @@ func (r *serviceAccountReconciler) createOrRefreshImagePullSecret(
 	ctx context.Context, logger logr.Logger, sa *corev1.ServiceAccount, name string, principal string,
 ) (_ *corev1.Secret, expiresAt time.Time, _ error) {
 	logger.Info("Creating or refreshing an image pull secret for the ServiceAccount...")
+	// Generate an access token for the configured image registry from the ServiceAccount's token.
 	username, token, expiresAt, err := r.generateAccessToken(ctx, sa, sa.Annotations[annotationKeyAudience], principal)
 	if err != nil {
-		return nil, time.Time{}, fmt.Errorf("failed to generate an access token for the configured image registry: %w", err)
+		return nil, time.Time{}, fmt.Errorf(
+			"failed to generate an access token for the configured image registry: %w", err,
+		)
 	}
 	logger.Info("Generated an access token for the configured image registry.", "expiresAt", expiresAt)
-	secret, err := buildImagePullSecret(sa, name, sa.Annotations[annotationKeyRegistry], username, token, expiresAt)
+
+	// Ensure an image pull secret from the access token.
+	secret, err := buildImagePullSecret(
+		sa, name, sa.Annotations[annotationKeyRegistry], username, token, expiresAt,
+	)
 	if err != nil {
 		return nil, time.Time{}, fmt.Errorf("failed to build image pull secret definition: %w", err)
 	}
+
 	op, err := r.ensureSecret(ctx, secret)
 	if err != nil {
 		return nil, time.Time{}, fmt.Errorf("failed to ensure an image pull secret: %w", err)
 	}
 	logger.Info("Ensured an image pull secret.", "secret", secret.GetName(), "operation", op)
+
 	return secret, expiresAt, nil
 }
 
