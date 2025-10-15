@@ -308,7 +308,7 @@ func (r *serviceAccountReconciler) imagePullSecretAttached(sa *corev1.ServiceAcc
 }
 
 func (r *serviceAccountReconciler) generateAccessToken(
-	ctx context.Context, sa *corev1.ServiceAccount, audience string, email string,
+	ctx context.Context, sa *corev1.ServiceAccount, audience string, account string,
 ) (username string, token string, expiresAt time.Time, _ error) {
 	tokenReq := &authenticationv1.TokenRequest{
 		Spec: authenticationv1.TokenRequestSpec{
@@ -319,20 +319,18 @@ func (r *serviceAccountReconciler) generateAccessToken(
 		return "", "", time.Time{}, fmt.Errorf("failed to create a ServiceAccount token: %w", err)
 	}
 
-	// AWS.
-	if roleARN := sa.Annotations[annotationKeyAWSRoleARN]; roleARN != "" {
+	// AWS
+	if sa.Annotations[annotationKeyAWSRoleARN] != "" {
 		registry := sa.Annotations[annotationKeyRegistry]
-		return r.generateAccessTokenAWS(ctx, tokenReq.Status.Token, registry, roleARN)
+		return r.generateAccessTokenAWS(ctx, tokenReq.Status.Token, registry, account)
 	}
 
-	// Google.
-	provider := sa.Annotations[annotationKeyGoogleWIDP]
-	if provider != "" && email != "" {
-		token, expiresAt, err := r.google.GenerateAccessToken(ctx, tokenReq.Status.Token, provider, email)
+	// Google
+	if provider := sa.Annotations[annotationKeyGoogleWIDP]; provider != "" {
+		token, expiresAt, err := r.google.GenerateAccessToken(ctx, tokenReq.Status.Token, provider, account)
 		if err != nil {
 			return "", "", time.Time{}, fmt.Errorf("failed to generate a Google service account's access token: %w", err)
 		}
-
 		return "oauth2accesstoken", token, expiresAt, nil
 	}
 
@@ -404,13 +402,8 @@ func (r *serviceAccountReconciler) listImagePullSecretsToCleanup(
 
 	namesInUse := map[string]struct{}{}
 	if hasConfig(sa) {
-		var emails []string
-		if sa.Annotations[annotationKeyGoogleWIDP] != "" {
-			emails = parseGoogleServiceAccountEmails(sa)
-		} else {
-			emails = []string{""}
-		}
-		for i := range emails {
+		accounts := r.resolveAccounts(sa)
+		for i := range accounts {
 			namesInUse[secretNameIndexed(sa, i)] = struct{}{}
 		}
 	}
@@ -468,8 +461,8 @@ func parseGoogleServiceAccountEmails(sa *corev1.ServiceAccount) []string {
 }
 
 func (r *serviceAccountReconciler) resolveAccounts(sa *corev1.ServiceAccount) []string {
-	if _, exists := sa.Annotations[annotationKeyGoogleSA]; exists {
-		return parseGoogleServiceAccountEmails(sa)
+	if emails := parseGoogleServiceAccountEmails(sa); emails != nil {
+		return emails
 	}
 	if awsRoleARN, exists := sa.Annotations[annotationKeyAWSRoleARN]; exists {
 		return []string{awsRoleARN}
