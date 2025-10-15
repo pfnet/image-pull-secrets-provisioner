@@ -21,6 +21,7 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
+	"strings"
 	"time"
 
 	"github.com/go-logr/logr"
@@ -98,46 +99,38 @@ func (r *serviceAccountReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		return ctrl.Result{}, nil
 	}
 
-	should, expiresAt, err := r.shouldCreateOrRefreshImagePullSecret(ctx, logger, sa)
-	if err != nil {
-		logger.Error(err, "failed to determine if an image pull secret should be created or refreshed")
-		return ctrl.Result{}, err
+	var requeueAt time.Time
+
+	if hasConfig(sa) {
+		accounts := r.resolveAccounts(sa)
+		for i, account := range accounts {
+			name := secretNameIndexed(sa, i)
+			l := logger.WithValues("secret", name)
+			if len(accounts) > 1 { l = l.WithValues("accountIndex", i) }
+			should, exp, err := r.shouldCreateOrRefreshImagePullSecret(ctx, l, sa, name)
+			if err != nil {
+				l.Error(err, "failed to determine if an image pull secret should be created or refreshed")
+				return ctrl.Result{}, err
+			}
+			if should {
+				secret, exp2, err := r.createOrRefreshImagePullSecret(ctx, l, sa, name, account)
+				if err != nil {
+					r.eventRecorder.Eventf(sa, corev1.EventTypeWarning, reasonFailedProvisioning, "Failed to create or refresh an image pull secret: %v", err)
+					l.Error(err, "failed to create or refresh an image pull secret")
+					return ctrl.Result{}, err
+				}
+				if err := r.attachImagePullSecret(ctx, l, sa, secret); err != nil {
+					r.eventRecorder.Eventf(sa, corev1.EventTypeWarning, reasonFailedProvisioning, "Failed to add an image pull secret to the ServiceAccount: %v", err)
+					l.Error(err, "failed to attach an image pull secret to a ServiceAccount")
+					return ctrl.Result{}, err
+				}
+				r.eventRecorder.Eventf(sa, corev1.EventTypeNormal, reasonSucceededProvisioning, "Provisioned an image pull secret: %s", secret.GetName())
+				if !exp2.IsZero() { exp = exp2 }
+			}
+			if !exp.IsZero() && (requeueAt.IsZero() || exp.Before(requeueAt)) { requeueAt = exp }
+		}
 	}
 
-	if should {
-		// Create or refresh an image pull secret, and attach it to the ServiceAccount.
-		logger.Info("ServiceAccount has configuration for image pull secret provisioning.")
-
-		var secret *corev1.Secret
-		var err error
-		secret, expiresAt, err = r.createOrRefreshImagePullSecret(ctx, logger, sa)
-		if err != nil {
-			r.eventRecorder.Eventf(
-				sa, corev1.EventTypeWarning, reasonFailedProvisioning,
-				"Failed to create or refresh an image pull secret: %v", err,
-			)
-			logger.Error(err, "failed to create or refresh an image pull secret")
-			return ctrl.Result{}, err
-		}
-		logger = logger.WithValues("secret", secret.GetName())
-
-		if err := r.attachImagePullSecret(ctx, logger, sa, secret); err != nil {
-			r.eventRecorder.Eventf(
-				sa, corev1.EventTypeWarning, reasonFailedProvisioning,
-				"Failed to add an image pull secret to the ServiceAccount: %v", err,
-			)
-			logger.Error(err, "failed to attach an image pull secret to a ServiceAccount")
-			return ctrl.Result{}, err
-		}
-
-		r.eventRecorder.Eventf(
-			sa, corev1.EventTypeNormal, reasonSucceededProvisioning,
-			"Provisioned an image pull secret: %s", secret.GetName(),
-		)
-	}
-
-	// When the config is changed, outdated image pull secrets remain existing and attached to the ServiceAccount.
-	// So, clean up them.
 	decommissioned, err := r.cleanupImagePullSecrets(ctx, logger, sa)
 	if err != nil {
 		r.eventRecorder.Eventf(
@@ -147,20 +140,17 @@ func (r *serviceAccountReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		logger.Error(err, "failed to cleanup outdated image pull secrets")
 		return ctrl.Result{}, err
 	}
-
 	if len(decommissioned) > 0 {
 		r.eventRecorder.Eventf(
 			sa, corev1.EventTypeNormal, reasonSucceededDecommissioning,
 			"Decommissioned outdated image pull secrets: %v", decommissioned,
 		)
 	}
-
-	if !expiresAt.IsZero() {
+	if !requeueAt.IsZero() {
 		return ctrl.Result{
-			RequeueAfter: time.Until(expiresAt.Add(-r.expirationGracePeriod)),
+			RequeueAfter: time.Until(requeueAt.Add(-r.expirationGracePeriod)),
 		}, nil
 	}
-
 	return ctrl.Result{}, nil
 }
 
@@ -172,7 +162,7 @@ func (r *serviceAccountReconciler) SetupWithManager(mgr ctrl.Manager) error {
 }
 
 func (r *serviceAccountReconciler) shouldCreateOrRefreshImagePullSecret(
-	ctx context.Context, logger logr.Logger, sa *corev1.ServiceAccount,
+	ctx context.Context, logger logr.Logger, sa *corev1.ServiceAccount, name string,
 ) (should bool, expiresAt time.Time, _ error) {
 	if !hasConfig(sa) {
 		logger.Info("ServiceAccount does not have configuration for image pull secret provisioning.")
@@ -180,8 +170,7 @@ func (r *serviceAccountReconciler) shouldCreateOrRefreshImagePullSecret(
 	}
 
 	// Check if the image pull secret exists.
-	secretKey := client.ObjectKey{Namespace: sa.GetNamespace(), Name: secretName(sa)}
-	logger = logger.WithValues("secret", secretKey.Name)
+	secretKey := client.ObjectKey{Namespace: sa.GetNamespace(), Name: name}
 
 	secret := &corev1.Secret{}
 	if err := r.Get(ctx, secretKey, secret); err != nil {
@@ -229,33 +218,23 @@ func (r *serviceAccountReconciler) shouldCreateOrRefreshImagePullSecret(
 }
 
 func (r *serviceAccountReconciler) createOrRefreshImagePullSecret(
-	ctx context.Context, logger logr.Logger, sa *corev1.ServiceAccount,
+	ctx context.Context, logger logr.Logger, sa *corev1.ServiceAccount, name string, account string,
 ) (_ *corev1.Secret, expiresAt time.Time, _ error) {
 	logger.Info("Creating or refreshing an image pull secret for the ServiceAccount...")
-
-	// Generate an access token for the configured image registry from the ServiceAccount's token.
-	username, token, expiresAt, err := r.generateAccessToken(ctx, sa, sa.Annotations[annotationKeyAudience])
+	username, token, expiresAt, err := r.generateAccessToken(ctx, sa, sa.Annotations[annotationKeyAudience], account)
 	if err != nil {
-		return nil, time.Time{}, fmt.Errorf(
-			"failed to generate an access token for the configured image registry: %w", err,
-		)
+		return nil, time.Time{}, fmt.Errorf("failed to generate an access token for the configured image registry: %w", err)
 	}
 	logger.Info("Generated an access token for the configured image registry.", "expiresAt", expiresAt)
-
-	// Ensure an image pull secret from the access token.
-	secret, err := buildImagePullSecret(
-		sa, secretName(sa), sa.Annotations[annotationKeyRegistry], username, token, expiresAt,
-	)
+	secret, err := buildImagePullSecret(sa, name, sa.Annotations[annotationKeyRegistry], username, token, expiresAt)
 	if err != nil {
 		return nil, time.Time{}, fmt.Errorf("failed to build image pull secret definition: %w", err)
 	}
-
 	op, err := r.ensureSecret(ctx, secret)
 	if err != nil {
 		return nil, time.Time{}, fmt.Errorf("failed to ensure an image pull secret: %w", err)
 	}
 	logger.Info("Ensured an image pull secret.", "secret", secret.GetName(), "operation", op)
-
 	return secret, expiresAt, nil
 }
 
@@ -329,7 +308,7 @@ func (r *serviceAccountReconciler) imagePullSecretAttached(sa *corev1.ServiceAcc
 }
 
 func (r *serviceAccountReconciler) generateAccessToken(
-	ctx context.Context, sa *corev1.ServiceAccount, audience string,
+	ctx context.Context, sa *corev1.ServiceAccount, audience string, email string,
 ) (username string, token string, expiresAt time.Time, _ error) {
 	tokenReq := &authenticationv1.TokenRequest{
 		Spec: authenticationv1.TokenRequestSpec{
@@ -348,9 +327,8 @@ func (r *serviceAccountReconciler) generateAccessToken(
 
 	// Google.
 	provider := sa.Annotations[annotationKeyGoogleWIDP]
-	saEmail := sa.Annotations[annotationKeyGoogleSA]
-	if provider != "" && saEmail != "" {
-		token, expiresAt, err := r.google.GenerateAccessToken(ctx, tokenReq.Status.Token, provider, saEmail)
+	if provider != "" && email != "" {
+		token, expiresAt, err := r.google.GenerateAccessToken(ctx, tokenReq.Status.Token, provider, email)
 		if err != nil {
 			return "", "", time.Time{}, fmt.Errorf("failed to generate a Google service account's access token: %w", err)
 		}
@@ -424,20 +402,26 @@ func (r *serviceAccountReconciler) listImagePullSecretsToCleanup(
 		return nil, fmt.Errorf("failed to list image pull secrets: %w", err)
 	}
 
-	inUse := ""
+	namesInUse := map[string]struct{}{}
 	if hasConfig(sa) {
-		inUse = secretName(sa)
+		var emails []string
+		if sa.Annotations[annotationKeyGoogleWIDP] != "" {
+			emails = parseGoogleServiceAccountEmails(sa)
+		} else {
+			emails = []string{""}
+		}
+		for i := range emails {
+			namesInUse[secretNameIndexed(sa, i)] = struct{}{}
+		}
 	}
-
 	targets := []*corev1.Secret{}
-	for _, secret := range secrets.Items {
-		if secret.GetName() == inUse {
+	for i := range secrets.Items {
+		sec := &secrets.Items[i]
+		if _, ok := namesInUse[sec.GetName()]; ok {
 			continue
 		}
-
-		targets = append(targets, &secret)
+		targets = append(targets, sec)
 	}
-
 	return targets, nil
 }
 
@@ -469,5 +453,43 @@ func (r *serviceAccountReconciler) detachImagePullSecret(
 		return fmt.Errorf("failed to patch a ServiceAccount: %w", err)
 	}
 
+	return nil
+}
+
+// parseGoogleServiceAccountEmails parses the google service account email annotation value, which can be a
+// comma-separated list, into a slice of unique, trimmed, non-empty emails while preserving order of first appearance.
+// If the annotation is empty, it returns nil (not an empty slice) so callers can easily distinguish absence.
+func parseGoogleServiceAccountEmails(sa *corev1.ServiceAccount) []string {
+	raw := sa.Annotations[annotationKeyGoogleSA]
+	if raw == "" {
+		return nil
+	}
+	parts := strings.Split(raw, ",")
+	seen := make(map[string]struct{}, len(parts))
+	emails := make([]string, 0, len(parts))
+	for _, p := range parts {
+		e := strings.TrimSpace(p)
+		if e == "" {
+			continue
+		}
+		if _, ok := seen[e]; ok {
+			continue
+		}
+		seen[e] = struct{}{}
+		emails = append(emails, e)
+	}
+	if len(emails) == 0 {
+		return nil
+	}
+	return emails
+}
+
+func (r *serviceAccountReconciler) resolveAccounts(sa *corev1.ServiceAccount) []string {
+	if _, exists := sa.Annotations[annotationKeyGoogleSA]; exists {
+		return parseGoogleServiceAccountEmails(sa)
+	}
+	if awsRoleARN, exists := sa.Annotations[annotationKeyAWSRoleARN]; exists {
+		return []string{awsRoleARN}
+	}
 	return nil
 }
