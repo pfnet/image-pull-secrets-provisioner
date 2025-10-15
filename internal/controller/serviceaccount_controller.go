@@ -114,6 +114,8 @@ func (r *serviceAccountReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		}
 	}
 
+	// When the config is changed, outdated image pull secrets remain existing and attached to the ServiceAccount.
+	// So, clean up them.
 	decommissioned, err := r.cleanupImagePullSecrets(ctx, logger, sa)
 	if err != nil {
 		r.eventRecorder.Eventf(
