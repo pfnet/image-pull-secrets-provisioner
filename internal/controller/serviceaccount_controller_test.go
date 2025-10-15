@@ -456,6 +456,7 @@ var _ = Describe("ServiceAccountReconciler", func() {
 				g.Expect(names[1]).To(ContainSubstring("-1"))
 			}).Should(Succeed())
 		})
+		// Other test cases are omitted because they are covered by the Google test cases.
 	})
 })
-		// Other test cases are omitted because they are covered by the Google test cases.
+
