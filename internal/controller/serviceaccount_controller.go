@@ -138,6 +138,7 @@ func (r *serviceAccountReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 			RequeueAfter: time.Until(requeueAt.Add(-r.expirationGracePeriod)),
 		}, nil
 	}
+
 	return ctrl.Result{}, nil
 }
 
@@ -364,6 +365,7 @@ func (r *serviceAccountReconciler) generateAccessToken(
 		if err != nil {
 			return "", "", time.Time{}, fmt.Errorf("failed to generate a Google service account's access token: %w", err)
 		}
+
 		return "oauth2accesstoken", token, expiresAt, nil
 	}
 
