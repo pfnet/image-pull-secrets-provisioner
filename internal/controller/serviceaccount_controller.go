@@ -449,23 +449,11 @@ func (r *serviceAccountReconciler) detachImagePullSecret(
 	return nil
 }
 
-// parseGoogleServiceAccountEmails parses the google service account email annotation value, which can be a
-// comma-separated list, into a slice of emails. Assumes the annotation has no spaces and emails are unique.
-// If the annotation is empty, it returns nil (not an empty slice) so callers can easily distinguish absence.
-func parseGoogleServiceAccountEmails(sa *corev1.ServiceAccount) []string {
-	raw := sa.Annotations[annotationKeyGoogleSA]
-	if raw == "" {
-		return nil
-	}
-	return strings.Split(raw, ",")
-}
-
 func (r *serviceAccountReconciler) resolveAccounts(sa *corev1.ServiceAccount) []string {
-	if emails := parseGoogleServiceAccountEmails(sa); emails != nil {
-		return emails
-	}
-	if awsRoleARN, exists := sa.Annotations[annotationKeyAWSRoleARN]; exists {
-		return []string{awsRoleARN}
+	for _, key := range []string{annotationKeyGoogleSA, annotationKeyAWSRoleARN} {
+		if raw := sa.Annotations[key]; raw != "" {
+			return strings.Split(raw, ",")
+		}
 	}
 	return nil
 }
