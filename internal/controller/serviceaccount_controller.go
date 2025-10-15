@@ -174,7 +174,7 @@ func (r *serviceAccountReconciler) provisionSecretForAccount(
 	}
 
 	r.eventRecorder.Eventf(sa, corev1.EventTypeNormal, reasonSucceededProvisioning, "Provisioned an image pull secret: %s", secret.GetName())
-	
+
 	if !newExp.IsZero() {
 		return newExp, nil
 	}
@@ -429,11 +429,10 @@ func (r *serviceAccountReconciler) listImagePullSecretsToCleanup(
 	}
 	targets := []*corev1.Secret{}
 	for i := range secrets.Items {
-		sec := &secrets.Items[i]
-		if _, ok := namesInUse[sec.GetName()]; ok {
+		if _, ok := namesInUse[secrets.Items[i].GetName()]; ok {
 			continue
 		}
-		targets = append(targets, sec)
+		targets = append(targets, &secrets.Items[i])
 	}
 	return targets, nil
 }
