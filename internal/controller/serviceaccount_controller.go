@@ -102,13 +102,7 @@ func (r *serviceAccountReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	var requeueAt time.Time
 
 	if hasConfig(sa) {
-		var principals []string
-		if raw := sa.Annotations[annotationKeyGoogleSA]; raw != "" {
-			principals = strings.Split(raw, ",")
-		} else if raw := sa.Annotations[annotationKeyAWSRoleARN]; raw != "" {
-			principals = strings.Split(raw, ",")
-		}
-		
+		principals := r.resolvePrincipals(sa)
 		for i, principal := range principals {
 			exp, err := r.provisionSecretForAccount(ctx, sa, principal, i, len(principals))
 			if err != nil {
@@ -439,13 +433,7 @@ func (r *serviceAccountReconciler) listImagePullSecretsToCleanup(
 
 	namesInUse := map[string]struct{}{}
 	if hasConfig(sa) {
-		var principals []string
-		if raw := sa.Annotations[annotationKeyGoogleSA]; raw != "" {
-			principals = strings.Split(raw, ",")
-		} else if raw := sa.Annotations[annotationKeyAWSRoleARN]; raw != "" {
-			principals = strings.Split(raw, ",")
-		}
-		
+		principals := r.resolvePrincipals(sa)
 		for i := range principals {
 			namesInUse[secretNameIndexed(sa, i)] = struct{}{}
 		}
@@ -488,5 +476,14 @@ func (r *serviceAccountReconciler) detachImagePullSecret(
 		return fmt.Errorf("failed to patch a ServiceAccount: %w", err)
 	}
 
+	return nil
+}
+
+func (r *serviceAccountReconciler) resolvePrincipals(sa *corev1.ServiceAccount) []string {
+	for _, key := range []string{annotationKeyGoogleSA, annotationKeyAWSRoleARN} {
+		if raw := sa.Annotations[key]; raw != "" {
+			return strings.Split(raw, ",")
+		}
+	}
 	return nil
 }
