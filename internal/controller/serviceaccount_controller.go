@@ -447,8 +447,10 @@ func (r *serviceAccountReconciler) listImagePullSecretsToCleanup(
 		if _, ok := namesInUse[secrets.Items[i].GetName()]; ok {
 			continue
 		}
+
 		targets = append(targets, &secrets.Items[i])
 	}
+
 	return targets, nil
 }
 
