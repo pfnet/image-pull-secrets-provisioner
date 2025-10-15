@@ -102,9 +102,9 @@ func (r *serviceAccountReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	var requeueAt time.Time
 
 	if hasConfig(sa) {
-		accounts := r.resolveAccounts(sa)
-		for i, account := range accounts {
-			exp, err := r.provisionSecretForAccount(ctx, sa, account, i, len(accounts))
+		principals := r.resolvePrincipals(sa)
+		for i, principal := range principals {
+			exp, err := r.provisionSecretForAccount(ctx, sa, principal, i, len(principals))
 			if err != nil {
 				return ctrl.Result{}, err
 			}
@@ -145,7 +145,7 @@ func (r *serviceAccountReconciler) SetupWithManager(mgr ctrl.Manager) error {
 }
 
 func (r *serviceAccountReconciler) provisionSecretForAccount(
-	ctx context.Context, sa *corev1.ServiceAccount, account string, accountIndex int, totalAccounts int,
+	ctx context.Context, sa *corev1.ServiceAccount, principal string, accountIndex int, totalAccounts int,
 ) (expiresAt time.Time, _ error) {
 	name := secretNameIndexed(sa, accountIndex)
 	logger := log.FromContext(ctx).WithValues("secret", name)
@@ -162,7 +162,7 @@ func (r *serviceAccountReconciler) provisionSecretForAccount(
 		return exp, nil
 	}
 
-	secret, newExp, err := r.createOrRefreshImagePullSecret(ctx, logger, sa, name, account)
+	secret, newExp, err := r.createOrRefreshImagePullSecret(ctx, logger, sa, name, principal)
 	if err != nil {
 		r.eventRecorder.Eventf(sa, corev1.EventTypeWarning, reasonFailedProvisioning, "Failed to create or refresh an image pull secret: %v", err)
 		return time.Time{}, fmt.Errorf("failed to create or refresh an image pull secret: %w", err)
@@ -238,10 +238,10 @@ func (r *serviceAccountReconciler) shouldCreateOrRefreshImagePullSecret(
 }
 
 func (r *serviceAccountReconciler) createOrRefreshImagePullSecret(
-	ctx context.Context, logger logr.Logger, sa *corev1.ServiceAccount, name string, account string,
+	ctx context.Context, logger logr.Logger, sa *corev1.ServiceAccount, name string, principal string,
 ) (_ *corev1.Secret, expiresAt time.Time, _ error) {
 	logger.Info("Creating or refreshing an image pull secret for the ServiceAccount...")
-	username, token, expiresAt, err := r.generateAccessToken(ctx, sa, sa.Annotations[annotationKeyAudience], account)
+	username, token, expiresAt, err := r.generateAccessToken(ctx, sa, sa.Annotations[annotationKeyAudience], principal)
 	if err != nil {
 		return nil, time.Time{}, fmt.Errorf("failed to generate an access token for the configured image registry: %w", err)
 	}
@@ -328,7 +328,7 @@ func (r *serviceAccountReconciler) imagePullSecretAttached(sa *corev1.ServiceAcc
 }
 
 func (r *serviceAccountReconciler) generateAccessToken(
-	ctx context.Context, sa *corev1.ServiceAccount, audience string, account string,
+	ctx context.Context, sa *corev1.ServiceAccount, audience string, principal string,
 ) (username string, token string, expiresAt time.Time, _ error) {
 	tokenReq := &authenticationv1.TokenRequest{
 		Spec: authenticationv1.TokenRequestSpec{
@@ -339,15 +339,15 @@ func (r *serviceAccountReconciler) generateAccessToken(
 		return "", "", time.Time{}, fmt.Errorf("failed to create a ServiceAccount token: %w", err)
 	}
 
-	// AWS
+	// AWS.
 	if sa.Annotations[annotationKeyAWSRoleARN] != "" {
 		registry := sa.Annotations[annotationKeyRegistry]
-		return r.generateAccessTokenAWS(ctx, tokenReq.Status.Token, registry, account)
+		return r.generateAccessTokenAWS(ctx, tokenReq.Status.Token, registry, principal)
 	}
 
-	// Google
+	// Google.
 	if provider := sa.Annotations[annotationKeyGoogleWIDP]; provider != "" {
-		token, expiresAt, err := r.google.GenerateAccessToken(ctx, tokenReq.Status.Token, provider, account)
+		token, expiresAt, err := r.google.GenerateAccessToken(ctx, tokenReq.Status.Token, provider, principal)
 		if err != nil {
 			return "", "", time.Time{}, fmt.Errorf("failed to generate a Google service account's access token: %w", err)
 		}
@@ -422,8 +422,8 @@ func (r *serviceAccountReconciler) listImagePullSecretsToCleanup(
 
 	namesInUse := map[string]struct{}{}
 	if hasConfig(sa) {
-		accounts := r.resolveAccounts(sa)
-		for i := range accounts {
+		principals := r.resolvePrincipals(sa)
+		for i := range principals {
 			namesInUse[secretNameIndexed(sa, i)] = struct{}{}
 		}
 	}
@@ -468,7 +468,7 @@ func (r *serviceAccountReconciler) detachImagePullSecret(
 	return nil
 }
 
-func (r *serviceAccountReconciler) resolveAccounts(sa *corev1.ServiceAccount) []string {
+func (r *serviceAccountReconciler) resolvePrincipals(sa *corev1.ServiceAccount) []string {
 	for _, key := range []string{annotationKeyGoogleSA, annotationKeyAWSRoleARN} {
 		if raw := sa.Annotations[key]; raw != "" {
 			return strings.Split(raw, ",")
