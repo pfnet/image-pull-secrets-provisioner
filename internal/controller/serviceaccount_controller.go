@@ -104,30 +104,13 @@ func (r *serviceAccountReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	if hasConfig(sa) {
 		accounts := r.resolveAccounts(sa)
 		for i, account := range accounts {
-			name := secretNameIndexed(sa, i)
-			l := logger.WithValues("secret", name)
-			if len(accounts) > 1 { l = l.WithValues("accountIndex", i) }
-			should, exp, err := r.shouldCreateOrRefreshImagePullSecret(ctx, l, sa, name)
+			exp, err := r.provisionSecretForAccount(ctx, sa, account, i, len(accounts))
 			if err != nil {
-				l.Error(err, "failed to determine if an image pull secret should be created or refreshed")
 				return ctrl.Result{}, err
 			}
-			if should {
-				secret, exp2, err := r.createOrRefreshImagePullSecret(ctx, l, sa, name, account)
-				if err != nil {
-					r.eventRecorder.Eventf(sa, corev1.EventTypeWarning, reasonFailedProvisioning, "Failed to create or refresh an image pull secret: %v", err)
-					l.Error(err, "failed to create or refresh an image pull secret")
-					return ctrl.Result{}, err
-				}
-				if err := r.attachImagePullSecret(ctx, l, sa, secret); err != nil {
-					r.eventRecorder.Eventf(sa, corev1.EventTypeWarning, reasonFailedProvisioning, "Failed to add an image pull secret to the ServiceAccount: %v", err)
-					l.Error(err, "failed to attach an image pull secret to a ServiceAccount")
-					return ctrl.Result{}, err
-				}
-				r.eventRecorder.Eventf(sa, corev1.EventTypeNormal, reasonSucceededProvisioning, "Provisioned an image pull secret: %s", secret.GetName())
-				if !exp2.IsZero() { exp = exp2 }
+			if !exp.IsZero() && (requeueAt.IsZero() || exp.Before(requeueAt)) {
+				requeueAt = exp
 			}
-			if !exp.IsZero() && (requeueAt.IsZero() || exp.Before(requeueAt)) { requeueAt = exp }
 		}
 	}
 
@@ -159,6 +142,43 @@ func (r *serviceAccountReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&corev1.ServiceAccount{}).
 		Complete(r)
+}
+
+func (r *serviceAccountReconciler) provisionSecretForAccount(
+	ctx context.Context, sa *corev1.ServiceAccount, account string, accountIndex int, totalAccounts int,
+) (expiresAt time.Time, _ error) {
+	name := secretNameIndexed(sa, accountIndex)
+	logger := log.FromContext(ctx).WithValues("secret", name)
+	if totalAccounts > 1 {
+		logger = logger.WithValues("accountIndex", accountIndex)
+	}
+
+	should, exp, err := r.shouldCreateOrRefreshImagePullSecret(ctx, logger, sa, name)
+	if err != nil {
+		return time.Time{}, fmt.Errorf("failed to determine if an image pull secret should be created or refreshed: %w", err)
+	}
+
+	if !should {
+		return exp, nil
+	}
+
+	secret, newExp, err := r.createOrRefreshImagePullSecret(ctx, logger, sa, name, account)
+	if err != nil {
+		r.eventRecorder.Eventf(sa, corev1.EventTypeWarning, reasonFailedProvisioning, "Failed to create or refresh an image pull secret: %v", err)
+		return time.Time{}, fmt.Errorf("failed to create or refresh an image pull secret: %w", err)
+	}
+
+	if err := r.attachImagePullSecret(ctx, logger, sa, secret); err != nil {
+		r.eventRecorder.Eventf(sa, corev1.EventTypeWarning, reasonFailedProvisioning, "Failed to add an image pull secret to the ServiceAccount: %v", err)
+		return time.Time{}, fmt.Errorf("failed to attach an image pull secret to a ServiceAccount: %w", err)
+	}
+
+	r.eventRecorder.Eventf(sa, corev1.EventTypeNormal, reasonSucceededProvisioning, "Provisioned an image pull secret: %s", secret.GetName())
+	
+	if !newExp.IsZero() {
+		return newExp, nil
+	}
+	return exp, nil
 }
 
 func (r *serviceAccountReconciler) shouldCreateOrRefreshImagePullSecret(
