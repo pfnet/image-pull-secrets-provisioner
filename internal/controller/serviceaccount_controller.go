@@ -157,15 +157,23 @@ func (r *serviceAccountReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 
 	decommissioned, err := r.cleanupImagePullSecrets(ctx, logger, sa)
 	if err != nil {
-		r.eventRecorder.Eventf(sa, corev1.EventTypeWarning, reasonFailedDecommissioning, "Failed to decommissioning outdated image pull secrets: %v", err)
+		r.eventRecorder.Eventf(
+			sa, corev1.EventTypeWarning, reasonFailedDecommissioning,
+			"Failed to decommissioning outdated image pull secrets: %v", err,
+		)
 		logger.Error(err, "failed to cleanup outdated image pull secrets")
 		return ctrl.Result{}, err
 	}
 	if len(decommissioned) > 0 {
-		r.eventRecorder.Eventf(sa, corev1.EventTypeNormal, reasonSucceededDecommissioning, "Decommissioned outdated image pull secrets: %v", decommissioned)
+		r.eventRecorder.Eventf(
+			sa, corev1.EventTypeNormal, reasonSucceededDecommissioning,
+			"Decommissioned outdated image pull secrets: %v", decommissioned,
+		)
 	}
 	if !requeueAt.IsZero() {
-		return ctrl.Result{RequeueAfter: time.Until(requeueAt.Add(-r.expirationGracePeriod))}, nil
+		return ctrl.Result{
+			RequeueAfter: time.Until(requeueAt.Add(-r.expirationGracePeriod)),
+		}, nil
 	}
 	return ctrl.Result{}, nil
 }
