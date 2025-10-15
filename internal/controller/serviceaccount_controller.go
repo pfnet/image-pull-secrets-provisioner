@@ -123,16 +123,25 @@ func (r *serviceAccountReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 			if should {
 				secret, exp2, err := r.createOrRefreshImagePullSecret(ctx, l, sa, name, email)
 				if err != nil {
-					r.eventRecorder.Eventf(sa, corev1.EventTypeWarning, reasonFailedProvisioning, "Failed to create or refresh an image pull secret: %v", err)
+					r.eventRecorder.Eventf(
+						sa, corev1.EventTypeWarning, reasonFailedProvisioning,
+						"Failed to create or refresh an image pull secret: %v", err,
+					)
 					l.Error(err, "failed to create or refresh an image pull secret")
 					return ctrl.Result{}, err
 				}
 				if err := r.attachImagePullSecret(ctx, l, sa, secret); err != nil {
-					r.eventRecorder.Eventf(sa, corev1.EventTypeWarning, reasonFailedProvisioning, "Failed to add an image pull secret to the ServiceAccount: %v", err)
+					r.eventRecorder.Eventf(
+						sa, corev1.EventTypeWarning, reasonFailedProvisioning,
+						"Failed to add an image pull secret to the ServiceAccount: %v", err,
+					)
 					l.Error(err, "failed to attach an image pull secret to a ServiceAccount")
 					return ctrl.Result{}, err
 				}
-				r.eventRecorder.Eventf(sa, corev1.EventTypeNormal, reasonSucceededProvisioning, "Provisioned an image pull secret: %s", secret.GetName())
+				r.eventRecorder.Eventf(
+					sa, corev1.EventTypeNormal, reasonSucceededProvisioning,
+					"Provisioned an image pull secret: %s", secret.GetName(),
+				)
 				if !exp2.IsZero() {
 					exp = exp2
 				}
