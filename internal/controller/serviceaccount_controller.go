@@ -102,7 +102,7 @@ func (r *serviceAccountReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	var requeueAt time.Time
 
 	if hasConfig(sa) {
-		principals := r.resolvePrincipals(sa)
+		principals := resolvePrincipals(sa)
 		for i, principal := range principals {
 			exp, err := r.provisionSecretForPrincipal(ctx, sa, principal, i)
 			if err != nil {
@@ -428,7 +428,7 @@ func (r *serviceAccountReconciler) listImagePullSecretsToCleanup(
 
 	namesInUse := map[string]struct{}{}
 	if hasConfig(sa) {
-		principals := r.resolvePrincipals(sa)
+		principals := resolvePrincipals(sa)
 		for i := range principals {
 			namesInUse[secretNameIndexed(sa, i)] = struct{}{}
 		}
@@ -476,7 +476,7 @@ func (r *serviceAccountReconciler) detachImagePullSecret(
 	return nil
 }
 
-func (r *serviceAccountReconciler) resolvePrincipals(sa *corev1.ServiceAccount) []string {
+func resolvePrincipals(sa *corev1.ServiceAccount) []string {
 	// Note: AWS and Google providers cannot be used together since they share
 	// the imagepullsecrets.preferred.jp/registry annotation. This function
 	// returns the first non-empty annotation found.

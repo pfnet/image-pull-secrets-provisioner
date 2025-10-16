@@ -87,21 +87,21 @@ func (e *evictor) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result,
 		return ctrl.Result{}, err
 	}
 
-	// Check if an image pull secret has already been provisioned for the ServiceAccount.
-	secret, err := e.getProvisionedImagePullSecret(ctx, sa)
+	// Check if image pull secrets have already been provisioned for the ServiceAccount.
+	secrets, err := e.getProvisionedImagePullSecrets(ctx, sa)
 	if err != nil {
-		logger.Error(err, "failed to get an image pull secret provisioned for a ServiceAccount")
+		logger.Error(err, "failed to get image pull secrets provisioned for a ServiceAccount")
 		return ctrl.Result{}, err
 	}
 
-	if secret == "" {
-		logger.Info("There is no image pull secret provisioned for a ServiceAccount.")
-		// Once an image pull secret is provisioned, the reconciliation will be triggered by the ServiceAccount update.
+	if len(secrets) == 0 {
+		logger.Info("There are no image pull secrets provisioned for a ServiceAccount.")
+		// Once image pull secrets are provisioned, the reconciliation will be triggered by the ServiceAccount update.
 		return ctrl.Result{}, nil
 	}
 
 	// Evaluate pods that use the ServiceAccount to list pods to evict.
-	pods, requeue, err := e.listPodsToEvict(ctx, sa, secret)
+	pods, requeue, err := e.listPodsToEvict(ctx, sa, secrets)
 	if err != nil {
 		logger.Error(err, "failed to list pods to evict")
 		return ctrl.Result{}, err
@@ -191,6 +191,42 @@ func (e *evictor) SetupWithManager(mgr ctrl.Manager) error {
 		Complete(e)
 }
 
+// getProvionedImagePullSecrets gets image pull secrets provisioned for a ServiceAccount.
+// It returns an empty slice if there are no image pull secrets provisioned.
+func (e *evictor) getProvisionedImagePullSecrets(
+	ctx context.Context, sa *corev1.ServiceAccount,
+) ([]string, error) {
+	if len(sa.ImagePullSecrets) == 0 {
+		return nil, nil
+	}
+
+	if !hasConfig(sa) {
+		return nil, nil
+	}
+
+	principals := resolvePrincipals(sa)
+	if len(principals) == 0 {
+		return nil, nil
+	}
+
+	var provisionedSecrets []string
+	for i := range principals {
+		secretName := secretNameIndexed(sa, i)
+		key := client.ObjectKey{Namespace: sa.GetNamespace(), Name: secretName}
+		secret := &corev1.Secret{}
+		if err := e.Get(ctx, key, secret); err != nil {
+			if apierrors.IsNotFound(err) {
+				// Secret not yet provisioned, skip it
+				continue
+			}
+			return nil, fmt.Errorf("failed to get an image pull secret: %w", err)
+		}
+		provisionedSecrets = append(provisionedSecrets, secret.GetName())
+	}
+
+	return provisionedSecrets, nil
+}
+
 // getProvionedImagePullSecret gets an image pull secret provisioned for a ServiceAccount.
 // It returns an empty string if there is no image pull secret provisioned.
 func (e *evictor) getProvisionedImagePullSecret(
@@ -218,12 +254,12 @@ func (e *evictor) getProvisionedImagePullSecret(
 // listPodsToEvict lists pods to evict, i.e., pods
 // - that uses the given ServiceAccount,
 // - that are failing to pull a container image, and
-// - that do not have the given image pull secret.
+// - that do not have all the given image pull secrets.
 //
 // It also returns a boolean that indicates whether we need to requeue the reconciliation to reevaluate pods later
 // because they can be eviction target.
 func (e *evictor) listPodsToEvict(
-	ctx context.Context, sa *corev1.ServiceAccount, secret string,
+	ctx context.Context, sa *corev1.ServiceAccount, secrets []string,
 ) (_ []*corev1.Pod, requeue bool, _ error) {
 	pods := &corev1.PodList{}
 	if err := e.List(
@@ -239,7 +275,7 @@ func (e *evictor) listPodsToEvict(
 
 	targets := []*corev1.Pod{}
 	for _, pod := range pods.Items {
-		if e.hasImagePullSecret(&pod, secret) {
+		if e.hasAllRequiredImagePullSecrets(&pod, secrets) {
 			continue
 		}
 
@@ -251,6 +287,21 @@ func (e *evictor) listPodsToEvict(
 	}
 
 	return targets, requeue, nil
+}
+
+// hasAllRequiredImagePullSecrets returns true iff a pod's spec.imagePullSecrets contains all the given Secrets.
+func (e *evictor) hasAllRequiredImagePullSecrets(pod *corev1.Pod, requiredSecrets []string) bool {
+	podSecrets := make(map[string]bool)
+	for _, podSecret := range pod.Spec.ImagePullSecrets {
+		podSecrets[podSecret.Name] = true
+	}
+
+	for _, required := range requiredSecrets {
+		if !podSecrets[required] {
+			return false
+		}
+	}
+	return true
 }
 
 // hasImagePullSecret returns true iff a pod's spec.imagePullSecrets contains the given Secret.

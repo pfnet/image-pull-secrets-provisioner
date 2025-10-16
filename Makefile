@@ -54,7 +54,7 @@ generate: controller-gen ## Generate code containing DeepCopy, DeepCopyInto, and
 
 .PHONY: fmt
 fmt: ## Run go fmt against code.
-	go fmt ./...
+# 	go fmt ./...
 
 .PHONY: vet
 vet: ## Run go vet against code.
