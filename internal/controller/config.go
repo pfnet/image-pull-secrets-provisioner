@@ -68,9 +68,8 @@ func secretNameIndexed(sa *corev1.ServiceAccount, idx int) string {
 	}
 	base := secretName(sa)
 	suffix := fmt.Sprintf("-%d", idx)
-	max := validation.DNS1123SubdomainMaxLength
-	if len(base)+len(suffix) > max {
-		base = base[:max-len(suffix)]
+	if len(base)+len(suffix) > validation.DNS1123SubdomainMaxLength {
+		base = base[:validation.DNS1123SubdomainMaxLength-len(suffix)]
 	}
 	return base + suffix
 }
