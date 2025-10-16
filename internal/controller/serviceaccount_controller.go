@@ -104,7 +104,7 @@ func (r *serviceAccountReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	if hasConfig(sa) {
 		principals := r.resolvePrincipals(sa)
 		for i, principal := range principals {
-			exp, err := r.provisionSecretForAccount(ctx, sa, principal, i, len(principals))
+			exp, err := r.provisionSecretForPrincipal(ctx, sa, principal, i)
 			if err != nil {
 				return ctrl.Result{}, err
 			}
@@ -112,6 +112,8 @@ func (r *serviceAccountReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 				requeueAt = exp
 			}
 		}
+	} else {
+		logger.Info("ServiceAccount does not have configuration for image pull secret provisioning.")
 	}
 
 	// When the config is changed, outdated image pull secrets remain existing and attached to the ServiceAccount.
@@ -149,14 +151,11 @@ func (r *serviceAccountReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Complete(r)
 }
 
-func (r *serviceAccountReconciler) provisionSecretForAccount(
-	ctx context.Context, sa *corev1.ServiceAccount, principal string, accountIndex int, totalAccounts int,
+func (r *serviceAccountReconciler) provisionSecretForPrincipal(
+	ctx context.Context, sa *corev1.ServiceAccount, principal string, accountIndex int,
 ) (expiresAt time.Time, _ error) {
 	name := secretNameIndexed(sa, accountIndex)
-	logger := log.FromContext(ctx).WithValues("secret", name)
-	if totalAccounts > 1 {
-		logger = logger.WithValues("accountIndex", accountIndex)
-	}
+	logger := log.FromContext(ctx).WithValues("secret", name, "accountIndex", accountIndex)
 
 	should, exp, err := r.shouldCreateOrRefreshImagePullSecret(ctx, logger, sa, name)
 	if err != nil {
@@ -180,20 +179,12 @@ func (r *serviceAccountReconciler) provisionSecretForAccount(
 
 	r.eventRecorder.Eventf(sa, corev1.EventTypeNormal, reasonSucceededProvisioning, "Provisioned an image pull secret: %s", secret.GetName())
 
-	if !newExp.IsZero() {
-		return newExp, nil
-	}
-	return exp, nil
+	return newExp, nil
 }
 
 func (r *serviceAccountReconciler) shouldCreateOrRefreshImagePullSecret(
 	ctx context.Context, logger logr.Logger, sa *corev1.ServiceAccount, name string,
 ) (should bool, expiresAt time.Time, _ error) {
-	if !hasConfig(sa) {
-		logger.Info("ServiceAccount does not have configuration for image pull secret provisioning.")
-		return false, time.Time{}, nil
-	}
-
 	// Check if the image pull secret exists.
 	secretKey := client.ObjectKey{Namespace: sa.GetNamespace(), Name: name}
 
@@ -486,6 +477,9 @@ func (r *serviceAccountReconciler) detachImagePullSecret(
 }
 
 func (r *serviceAccountReconciler) resolvePrincipals(sa *corev1.ServiceAccount) []string {
+	// Note: AWS and Google providers cannot be used together since they share
+	// the imagepullsecrets.preferred.jp/registry annotation. This function
+	// returns the first non-empty annotation found.
 	for _, key := range []string{annotationKeyGoogleSA, annotationKeyAWSRoleARN} {
 		if raw := sa.Annotations[key]; raw != "" {
 			return strings.Split(raw, ",")
