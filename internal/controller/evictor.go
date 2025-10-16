@@ -227,29 +227,6 @@ func (e *evictor) getProvisionedImagePullSecrets(
 	return provisionedSecrets, nil
 }
 
-// getProvionedImagePullSecret gets an image pull secret provisioned for a ServiceAccount.
-// It returns an empty string if there is no image pull secret provisioned.
-func (e *evictor) getProvisionedImagePullSecret(
-	ctx context.Context, sa *corev1.ServiceAccount,
-) (string, error) {
-	if len(sa.ImagePullSecrets) == 0 {
-		return "", nil
-	}
-
-	key := client.ObjectKey{Namespace: sa.GetNamespace(), Name: secretName(sa)}
-	secret := &corev1.Secret{}
-	if err := e.Get(ctx, key, secret); err != nil {
-		if apierrors.IsNotFound(err) {
-			// ServiceAccount has invalid configuration for image pull secret provisioning,
-			// or an image pull secret has not been provisioned yet.
-			return "", nil
-		}
-
-		return "", fmt.Errorf("failed to get an image pull secret: %w", err)
-	}
-
-	return secret.GetName(), nil
-}
 
 // listPodsToEvict lists pods to evict, i.e., pods
 // - that uses the given ServiceAccount,
