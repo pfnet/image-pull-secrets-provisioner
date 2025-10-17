@@ -104,7 +104,8 @@ func (r *serviceAccountReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	if hasConfig(sa) {
 		principals := resolvePrincipals(sa)
 		for i, principal := range principals {
-			exp, err := r.provisionSecretForPrincipal(ctx, sa, principal, i)
+			secretName := secretNameIndexed(sa, i)
+			exp, err := r.provisionImagePullSecretForPrincipal(ctx, sa, secretName, principal)
 			if err != nil {
 				return ctrl.Result{}, err
 			}
