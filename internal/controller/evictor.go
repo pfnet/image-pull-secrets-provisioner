@@ -227,7 +227,6 @@ func (e *evictor) getProvisionedImagePullSecrets(
 	return provisionedSecrets, nil
 }
 
-
 // listPodsToEvict lists pods to evict, i.e., pods
 // - that uses the given ServiceAccount,
 // - that are failing to pull a container image, and
