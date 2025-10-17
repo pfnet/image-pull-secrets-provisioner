@@ -152,13 +152,12 @@ func (r *serviceAccountReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Complete(r)
 }
 
-func (r *serviceAccountReconciler) provisionSecretForPrincipal(
-	ctx context.Context, sa *corev1.ServiceAccount, principal string, principalIndex int,
+func (r *serviceAccountReconciler) provisionImagePullSecretForPrincipal(
+	ctx context.Context, sa *corev1.ServiceAccount, secretName string, principal string,
 ) (expiresAt time.Time, _ error) {
-	name := secretNameIndexed(sa, principalIndex)
-	logger := log.FromContext(ctx).WithValues("secret", name, "principal", principal)
+	logger := log.FromContext(ctx, "secret", secretName, "principal", principal)
 
-	should, exp, err := r.shouldCreateOrRefreshImagePullSecret(ctx, logger, sa, name)
+	should, exp, err := r.shouldCreateOrRefreshImagePullSecret(ctx, logger, sa, secretName)
 	if err != nil {
 		return time.Time{}, fmt.Errorf("failed to determine if an image pull secret should be created or refreshed: %w", err)
 	}
