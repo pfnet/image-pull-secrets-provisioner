@@ -204,24 +204,22 @@ func (e *evictor) getProvisionedImagePullSecrets(
 		return nil, nil
 	}
 
-	principals := resolvePrincipals(sa)
-	if len(principals) == 0 {
-		return nil, nil
+	// List image pull secrets using the label selector for efficiency
+	secrets := &corev1.SecretList{}
+	if err := e.List(
+		ctx,
+		secrets,
+		client.InNamespace(sa.GetNamespace()),
+		client.MatchingLabels{
+			labelKeyServiceAccount: sa.GetName(),
+		},
+	); err != nil {
+		return nil, fmt.Errorf("failed to list image pull secrets: %w", err)
 	}
 
 	var provisionedSecrets []string
-	for i := range principals {
-		secretName := secretNameIndexed(sa, i)
-		key := client.ObjectKey{Namespace: sa.GetNamespace(), Name: secretName}
-		secret := &corev1.Secret{}
-		if err := e.Get(ctx, key, secret); err != nil {
-			if apierrors.IsNotFound(err) {
-				// Secret not yet provisioned, skip it
-				continue
-			}
-			return nil, fmt.Errorf("failed to get an image pull secret: %w", err)
-		}
-		provisionedSecrets = append(provisionedSecrets, secret.GetName())
+	for i := range secrets.Items {
+		provisionedSecrets = append(provisionedSecrets, secrets.Items[i].GetName())
 	}
 
 	return provisionedSecrets, nil

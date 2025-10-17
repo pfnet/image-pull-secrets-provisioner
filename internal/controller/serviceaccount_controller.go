@@ -480,7 +480,7 @@ func resolvePrincipals(sa *corev1.ServiceAccount) []string {
 	// Note: AWS and Google providers cannot be used together since they share
 	// the imagepullsecrets.preferred.jp/registry annotation. This function
 	// returns the first non-empty annotation found.
-	for _, key := range []string{annotationKeyGoogleSA, annotationKeyAWSRoleARN} {
+	for _, key := range []string{annotationKeyAWSRoleARN, annotationKeyGoogleSA} {
 		if raw := sa.Annotations[key]; raw != "" {
 			return strings.Split(raw, ",")
 		}
