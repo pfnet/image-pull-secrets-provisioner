@@ -104,7 +104,8 @@ func (r *serviceAccountReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	if hasConfig(sa) {
 		principals := resolvePrincipals(sa)
 		for i, principal := range principals {
-			exp, err := r.provisionSecretForPrincipal(ctx, sa, principal, i)
+			secretName := secretName(sa, i)
+			exp, err := r.provisionImagePullSecretForPrincipal(ctx, sa, secretName, principal)
 			if err != nil {
 				return ctrl.Result{}, err
 			}
@@ -151,13 +152,12 @@ func (r *serviceAccountReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Complete(r)
 }
 
-func (r *serviceAccountReconciler) provisionSecretForPrincipal(
-	ctx context.Context, sa *corev1.ServiceAccount, principal string, principalIndex int,
+func (r *serviceAccountReconciler) provisionImagePullSecretForPrincipal(
+	ctx context.Context, sa *corev1.ServiceAccount, secretName string, principal string,
 ) (expiresAt time.Time, _ error) {
-	name := secretName(sa, principalIndex)
-	logger := log.FromContext(ctx).WithValues("secret", name, "principal", principal)
+	logger := log.FromContext(ctx).WithValues("secret", secretName, "principal", principal)
 
-	should, exp, err := r.shouldCreateOrRefreshImagePullSecret(ctx, logger, sa, name)
+	should, exp, err := r.shouldCreateOrRefreshImagePullSecret(ctx, logger, sa, secretName)
 	if err != nil {
 		return time.Time{}, fmt.Errorf("failed to determine if an image pull secret should be created or refreshed: %w", err)
 	}
@@ -166,7 +166,7 @@ func (r *serviceAccountReconciler) provisionSecretForPrincipal(
 		return exp, nil
 	}
 
-	secret, newExp, err := r.createOrRefreshImagePullSecret(ctx, logger, sa, name, principal)
+	secret, newExp, err := r.createOrRefreshImagePullSecret(ctx, logger, sa, secretName, principal)
 	if err != nil {
 		r.eventRecorder.Eventf(sa, corev1.EventTypeWarning, reasonFailedProvisioning, "Failed to create or refresh an image pull secret: %v", err)
 		return time.Time{}, fmt.Errorf("failed to create or refresh an image pull secret: %w", err)
