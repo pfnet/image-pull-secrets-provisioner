@@ -166,7 +166,7 @@ func (r *serviceAccountReconciler) provisionImagePullSecretForPrincipal(
 		return exp, nil
 	}
 
-	secret, newExp, err := r.createOrRefreshImagePullSecret(ctx, logger, sa, name, principal)
+	secret, newExp, err := r.createOrRefreshImagePullSecret(ctx, logger, sa, secretName, principal)
 	if err != nil {
 		r.eventRecorder.Eventf(sa, corev1.EventTypeWarning, reasonFailedProvisioning, "Failed to create or refresh an image pull secret: %v", err)
 		return time.Time{}, fmt.Errorf("failed to create or refresh an image pull secret: %w", err)
