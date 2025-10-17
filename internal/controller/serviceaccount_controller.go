@@ -157,7 +157,7 @@ func (r *serviceAccountReconciler) provisionImagePullSecretForPrincipal(
 ) (expiresAt time.Time, _ error) {
 	logger := log.FromContext(ctx).WithValues("secret", secretName, "principal", principal)
 
-	should, exp, err := r.shouldCreateOrRefreshImagePullSecret(ctx, logger, sa, secretName)
+	should, exp, err := r.shouldCreateOrRefreshImagePullSecret(ctx, logger, sa, secretName, principal)
 	if err != nil {
 		return time.Time{}, fmt.Errorf("failed to determine if an image pull secret should be created or refreshed: %w", err)
 	}
@@ -183,10 +183,10 @@ func (r *serviceAccountReconciler) provisionImagePullSecretForPrincipal(
 }
 
 func (r *serviceAccountReconciler) shouldCreateOrRefreshImagePullSecret(
-	ctx context.Context, logger logr.Logger, sa *corev1.ServiceAccount, name string,
+	ctx context.Context, logger logr.Logger, sa *corev1.ServiceAccount, secretName string, principal string,
 ) (should bool, expiresAt time.Time, _ error) {
 	// Check if the image pull secret exists.
-	secretKey := client.ObjectKey{Namespace: sa.GetNamespace(), Name: name}
+	secretKey := client.ObjectKey{Namespace: sa.GetNamespace(), Name: secretName}
 
 	secret := &corev1.Secret{}
 	if err := r.Get(ctx, secretKey, secret); err != nil {
@@ -196,6 +196,14 @@ func (r *serviceAccountReconciler) shouldCreateOrRefreshImagePullSecret(
 		}
 
 		return false, time.Time{}, fmt.Errorf("failed to check the existing of an image pull secret: %w", err)
+	}
+
+	// Check if the image pull secret was provisioned for the principal.
+	if secret.Annotations[annotationKeyPrincipal] != principal {
+		logger.Info(
+			"Image pull secret was provisioned for a different principal. Should be provisioned for the current one.",
+		)
+		return true, time.Time{}, nil
 	}
 
 	// Check if the image pull secret is attached to the ServiceAccount.
@@ -248,7 +256,7 @@ func (r *serviceAccountReconciler) createOrRefreshImagePullSecret(
 
 	// Ensure an image pull secret from the access token.
 	secret, err := buildImagePullSecret(
-		sa, name, sa.Annotations[annotationKeyRegistry], username, token, expiresAt,
+		sa, name, sa.Annotations[annotationKeyRegistry], username, token, principal, expiresAt,
 	)
 	if err != nil {
 		return nil, time.Time{}, fmt.Errorf("failed to build image pull secret definition: %w", err)

@@ -29,7 +29,7 @@ import (
 // buildImagePullSecret builds a Kubernetes Secret definition for an image pull secrets.
 // The built Secret will have
 // - a label to select them by the ServiceAccount name,
-// - an annotation to store the expiration time, and
+// - an annotation to store the principal and expiration time, and
 // - an owner reference to the ServiceAccount so that they will be deleted when the ServiceAccount no longer exists.
 func buildImagePullSecret(
 	serviceAccount *corev1.ServiceAccount,
@@ -37,6 +37,7 @@ func buildImagePullSecret(
 	registry string,
 	username string,
 	password string,
+	principal string,
 	expiresAt time.Time,
 ) (*corev1.Secret, error) {
 	type dockerConfigEntry struct {
@@ -70,6 +71,7 @@ func buildImagePullSecret(
 				labelKeyServiceAccount: serviceAccount.GetName(),
 			},
 			Annotations: map[string]string{
+				annotationKeyPrincipal: principal,
 				annotationKeyExpiresAt: expiresAt.Format(time.RFC3339),
 			},
 			OwnerReferences: []metav1.OwnerReference{
