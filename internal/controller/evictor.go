@@ -274,17 +274,6 @@ func (e *evictor) hasAllRequiredImagePullSecrets(pod *corev1.Pod, requiredSecret
 	return true
 }
 
-// hasImagePullSecret returns true iff a pod's spec.imagePullSecrets contains the given Secret.
-func (e *evictor) hasImagePullSecret(pod *corev1.Pod, secret string) bool {
-	for _, podSecret := range pod.Spec.ImagePullSecrets {
-		if podSecret.Name == secret {
-			return true
-		}
-	}
-
-	return false
-}
-
 // isImagePullFailing returns true iff a pod is failing to pull container images.
 func (e *evictor) isImagePullFailing(pod *corev1.Pod) bool {
 	// Envtest seems not to support container statuses, so we cannot determine if a pod is failing to pull container
