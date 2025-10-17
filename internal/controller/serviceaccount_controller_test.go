@@ -18,6 +18,7 @@ package controller
 
 import (
 	"context"
+	"strings"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -81,6 +82,190 @@ var _ = Describe("ServiceAccountReconciler", func() {
 				},
 			},
 		}
+
+		It("Create and attach multiple Secrets (two emails)", func() {
+			// Create a ServiceAccount with two emails.
+			sa2 := sa.DeepCopy()
+			sa2.Annotations["imagepullsecrets.preferred.jp/googlecloud-service-account-email"] = "gsa1@example.iam.gserviceaccount.com,gsa2@example.iam.gserviceaccount.com"
+			Expect(k8sClient.Create(ctx, sa2)).NotTo(HaveOccurred())
+			objectsToDelete = append(objectsToDelete, sa2)
+
+			var secretsNames []string
+			Eventually(func(g Gomega) {
+				secrets := &corev1.SecretList{}
+				g.Expect(k8sClient.List(
+					ctx,
+					secrets,
+					client.InNamespace(ns),
+					client.MatchingLabels{
+						"imagepullsecrets.preferred.jp/service-account": sa2.GetName(),
+					},
+				)).NotTo(HaveOccurred())
+				g.Expect(secrets.Items).To(HaveLen(2))
+				secretsNames = []string{secrets.Items[0].GetName(), secrets.Items[1].GetName()}
+			}).Should(Succeed())
+			// Base name must not have suffix, second must have -1 suffix.
+			Expect(secretsNames[0]).NotTo(ContainSubstring("-1"))
+			Expect(secretsNames[1]).To(ContainSubstring("-1"))
+
+			Eventually(func(g Gomega) {
+				actual := &corev1.ServiceAccount{}
+				g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(sa2), actual)).NotTo(HaveOccurred())
+				refs := extractNames(actual.ImagePullSecrets)
+				g.Expect(refs).To(ContainElements("static", secretsNames[0], secretsNames[1]))
+			}).Should(Succeed())
+		})
+
+		It("Cleanup a removed email (two -> one)", func() {
+			// Initial SA with two emails.
+			sa2 := sa.DeepCopy()
+			sa2.Annotations["imagepullsecrets.preferred.jp/googlecloud-service-account-email"] = "gsa1@example.iam.gserviceaccount.com,gsa2@example.iam.gserviceaccount.com"
+			Expect(k8sClient.Create(ctx, sa2)).NotTo(HaveOccurred())
+			objectsToDelete = append(objectsToDelete, sa2)
+
+			// Wait for two secrets.
+			var baseSecretName string
+			var secondSecretName string
+			Eventually(func(g Gomega) {
+				secrets := &corev1.SecretList{}
+				g.Expect(k8sClient.List(
+					ctx,
+					secrets,
+					client.InNamespace(ns),
+					client.MatchingLabels{
+						"imagepullsecrets.preferred.jp/service-account": sa2.GetName(),
+					},
+				)).NotTo(HaveOccurred())
+				g.Expect(secrets.Items).To(HaveLen(2))
+				for _, s := range secrets.Items {
+					if strings.Contains(s.GetName(), "-1") {
+						secondSecretName = s.GetName()
+					} else {
+						baseSecretName = s.GetName()
+					}
+				}
+			}).Should(Succeed())
+
+			// Remove second email.
+			orig := sa2.DeepCopy()
+			sa2.Annotations["imagepullsecrets.preferred.jp/googlecloud-service-account-email"] = "gsa1@example.iam.gserviceaccount.com"
+			Expect(k8sClient.Patch(ctx, sa2, client.StrategicMergeFrom(orig))).NotTo(HaveOccurred())
+
+			// Expect only base secret remains and second is deleted + detached.
+			Eventually(func(g Gomega) {
+				secrets := &corev1.SecretList{}
+				g.Expect(k8sClient.List(
+					ctx,
+					secrets,
+					client.InNamespace(ns),
+					client.MatchingLabels{
+						"imagepullsecrets.preferred.jp/service-account": sa2.GetName(),
+					},
+				)).NotTo(HaveOccurred())
+				g.Expect(secrets.Items).To(HaveLen(1))
+				g.Expect(secrets.Items[0].GetName()).To(Equal(baseSecretName))
+			}).Should(Succeed())
+
+			Eventually(func(g Gomega) {
+				actual := &corev1.ServiceAccount{}
+				g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(sa2), actual)).NotTo(HaveOccurred())
+				refs := extractNames(actual.ImagePullSecrets)
+				g.Expect(refs).To(ContainElements("static", baseSecretName))
+				g.Expect(refs).NotTo(ContainElement(secondSecretName))
+			}).Should(Succeed())
+		})
+
+		It("Refresh multiple Secrets (two emails)", func() {
+			// Create a ServiceAccount with two emails.
+			sa2 := sa.DeepCopy()
+			sa2.Annotations["imagepullsecrets.preferred.jp/googlecloud-service-account-email"] = "gsa1@example.iam.gserviceaccount.com,gsa2@example.iam.gserviceaccount.com"
+			Expect(k8sClient.Create(ctx, sa2)).NotTo(HaveOccurred())
+			objectsToDelete = append(objectsToDelete, sa2)
+
+			// Wait for two secrets are created.
+			var secrets []*corev1.Secret
+			Eventually(func(g Gomega) {
+				secretList := &corev1.SecretList{}
+				g.Expect(k8sClient.List(
+					ctx,
+					secretList,
+					client.InNamespace(ns),
+					client.MatchingLabels{
+						"imagepullsecrets.preferred.jp/service-account": sa2.GetName(),
+					},
+				)).NotTo(HaveOccurred())
+				g.Expect(secretList.Items).To(HaveLen(2))
+				secrets = []*corev1.Secret{&secretList.Items[0], &secretList.Items[1]}
+			}).Should(Succeed())
+
+			// Test that both Secrets are refreshed.
+			Eventually(func(g Gomega) {
+				for _, secret := range secrets {
+					actual := &corev1.Secret{}
+					g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(secret), actual)).NotTo(HaveOccurred())
+					g.Expect(actual.Data).NotTo(Equal(secret.Data))
+				}
+			}).WithTimeout(2 * tokenValidity).Should(Succeed())
+		})
+
+		It("Cleanup outdated Secrets (multiple principals)", func() {
+			// Create a ServiceAccount with two emails.
+			sa2 := sa.DeepCopy()
+			sa2.Annotations["imagepullsecrets.preferred.jp/googlecloud-service-account-email"] = "gsa1@example.iam.gserviceaccount.com,gsa2@example.iam.gserviceaccount.com"
+			Expect(k8sClient.Create(ctx, sa2)).NotTo(HaveOccurred())
+			objectsToDelete = append(objectsToDelete, sa2)
+
+			// Wait for two secrets are created.
+			Eventually(func(g Gomega) {
+				secrets := &corev1.SecretList{}
+				g.Expect(k8sClient.List(
+					ctx,
+					secrets,
+					client.InNamespace(ns),
+					client.MatchingLabels{
+						"imagepullsecrets.preferred.jp/service-account": sa2.GetName(),
+					},
+				)).NotTo(HaveOccurred())
+				g.Expect(secrets.Items).To(HaveLen(2))
+			}).Should(Succeed())
+
+			// Create an outdated secret.
+			outdated := &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      sa2.GetName() + "-outdated",
+					Namespace: ns,
+					Labels: map[string]string{
+						"imagepullsecrets.preferred.jp/service-account": sa2.GetName(),
+					},
+				},
+				Data: map[string][]byte{".dockerconfigjson": []byte("{}")},
+				Type: corev1.SecretTypeDockerConfigJson,
+			}
+			Expect(k8sClient.Create(ctx, outdated)).NotTo(HaveOccurred())
+			// Note: outdated secret is not added to objectsToDelete because it will be deleted by reconciliation
+
+			// Trigger reconciliation.
+			orig := sa2.DeepCopy()
+			sa2.Annotations["trigger-reconcile"] = time.Now().Format(time.RFC3339)
+			Expect(k8sClient.Patch(ctx, sa2, client.StrategicMergeFrom(orig))).NotTo(HaveOccurred())
+
+			// Expect outdated secret is cleaned up.
+			Eventually(func(g Gomega) {
+				secrets := &corev1.SecretList{}
+				g.Expect(k8sClient.List(
+					ctx,
+					secrets,
+					client.InNamespace(ns),
+					client.MatchingLabels{
+						"imagepullsecrets.preferred.jp/service-account": sa2.GetName(),
+					},
+				)).NotTo(HaveOccurred())
+				g.Expect(secrets.Items).To(HaveLen(2))
+				for _, s := range secrets.Items {
+					g.Expect(s.GetName()).NotTo(Equal(outdated.GetName()))
+				}
+			}).Should(Succeed())
+		})
 
 		It("Create and attach a Secret", func() {
 			// Create a ServiceAccount.
@@ -341,6 +526,28 @@ var _ = Describe("ServiceAccountReconciler", func() {
 			}).Should(Succeed())
 		})
 
+		It("AWS-specific: comma-separated Role ARNs", func() {
+			// Test AWS comma-separated parsing (vs Google's behavior).
+			sa2 := sa.DeepCopy()
+			sa2.Name = "sa-aws-multi"
+			sa2.Annotations["imagepullsecrets.preferred.jp/aws-role-arn"] = "arn:aws:iam::999999999999:role/role-1,arn:aws:iam::999999999999:role/role-2"
+			Expect(k8sClient.Create(ctx, sa2)).NotTo(HaveOccurred())
+			objectsToDelete = append(objectsToDelete, sa2)
+
+			// Verify AWS creates 2 secrets with correct naming.
+			Eventually(func(g Gomega) {
+				secrets := &corev1.SecretList{}
+				g.Expect(k8sClient.List(ctx, secrets, client.InNamespace(ns), client.MatchingLabels{
+					"imagepullsecrets.preferred.jp/service-account": sa2.GetName(),
+				})).NotTo(HaveOccurred())
+				g.Expect(secrets.Items).To(HaveLen(2))
+
+				// AWS naming: first no suffix, second "-1" suffix.
+				names := []string{secrets.Items[0].GetName(), secrets.Items[1].GetName()}
+				g.Expect(names[0]).NotTo(ContainSubstring("-1"))
+				g.Expect(names[1]).To(ContainSubstring("-1"))
+			}).Should(Succeed())
+		})
 		// Other test cases are omitted because they are covered by the Google test cases.
 	})
 })

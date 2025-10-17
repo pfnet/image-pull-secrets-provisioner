@@ -21,6 +21,7 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
+	"strings"
 	"time"
 
 	"github.com/go-logr/logr"
@@ -98,42 +99,22 @@ func (r *serviceAccountReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		return ctrl.Result{}, nil
 	}
 
-	should, expiresAt, err := r.shouldCreateOrRefreshImagePullSecret(ctx, logger, sa)
-	if err != nil {
-		logger.Error(err, "failed to determine if an image pull secret should be created or refreshed")
-		return ctrl.Result{}, err
-	}
+	var requeueAt time.Time
 
-	if should {
-		// Create or refresh an image pull secret, and attach it to the ServiceAccount.
-		logger.Info("ServiceAccount has configuration for image pull secret provisioning.")
-
-		var secret *corev1.Secret
-		var err error
-		secret, expiresAt, err = r.createOrRefreshImagePullSecret(ctx, logger, sa)
-		if err != nil {
-			r.eventRecorder.Eventf(
-				sa, corev1.EventTypeWarning, reasonFailedProvisioning,
-				"Failed to create or refresh an image pull secret: %v", err,
-			)
-			logger.Error(err, "failed to create or refresh an image pull secret")
-			return ctrl.Result{}, err
+	if hasConfig(sa) {
+		principals := resolvePrincipals(sa)
+		for i, principal := range principals {
+			secretName := secretName(sa, i)
+			exp, err := r.provisionImagePullSecretForPrincipal(ctx, sa, secretName, principal)
+			if err != nil {
+				return ctrl.Result{}, err
+			}
+			if !exp.IsZero() && (requeueAt.IsZero() || exp.Before(requeueAt)) {
+				requeueAt = exp
+			}
 		}
-		logger = logger.WithValues("secret", secret.GetName())
-
-		if err := r.attachImagePullSecret(ctx, logger, sa, secret); err != nil {
-			r.eventRecorder.Eventf(
-				sa, corev1.EventTypeWarning, reasonFailedProvisioning,
-				"Failed to add an image pull secret to the ServiceAccount: %v", err,
-			)
-			logger.Error(err, "failed to attach an image pull secret to a ServiceAccount")
-			return ctrl.Result{}, err
-		}
-
-		r.eventRecorder.Eventf(
-			sa, corev1.EventTypeNormal, reasonSucceededProvisioning,
-			"Provisioned an image pull secret: %s", secret.GetName(),
-		)
+	} else {
+		logger.Info("ServiceAccount does not have configuration for image pull secret provisioning.")
 	}
 
 	// When the config is changed, outdated image pull secrets remain existing and attached to the ServiceAccount.
@@ -155,9 +136,9 @@ func (r *serviceAccountReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		)
 	}
 
-	if !expiresAt.IsZero() {
+	if !requeueAt.IsZero() {
 		return ctrl.Result{
-			RequeueAfter: time.Until(expiresAt.Add(-r.expirationGracePeriod)),
+			RequeueAfter: time.Until(requeueAt.Add(-r.expirationGracePeriod)),
 		}, nil
 	}
 
@@ -171,17 +152,41 @@ func (r *serviceAccountReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Complete(r)
 }
 
-func (r *serviceAccountReconciler) shouldCreateOrRefreshImagePullSecret(
-	ctx context.Context, logger logr.Logger, sa *corev1.ServiceAccount,
-) (should bool, expiresAt time.Time, _ error) {
-	if !hasConfig(sa) {
-		logger.Info("ServiceAccount does not have configuration for image pull secret provisioning.")
-		return false, time.Time{}, nil
+func (r *serviceAccountReconciler) provisionImagePullSecretForPrincipal(
+	ctx context.Context, sa *corev1.ServiceAccount, secretName string, principal string,
+) (expiresAt time.Time, _ error) {
+	logger := log.FromContext(ctx).WithValues("secret", secretName, "principal", principal)
+
+	should, exp, err := r.shouldCreateOrRefreshImagePullSecret(ctx, logger, sa, secretName)
+	if err != nil {
+		return time.Time{}, fmt.Errorf("failed to determine if an image pull secret should be created or refreshed: %w", err)
 	}
 
+	if !should {
+		return exp, nil
+	}
+
+	secret, newExp, err := r.createOrRefreshImagePullSecret(ctx, logger, sa, secretName, principal)
+	if err != nil {
+		r.eventRecorder.Eventf(sa, corev1.EventTypeWarning, reasonFailedProvisioning, "Failed to create or refresh an image pull secret: %v", err)
+		return time.Time{}, fmt.Errorf("failed to create or refresh an image pull secret: %w", err)
+	}
+
+	if err := r.attachImagePullSecret(ctx, logger, sa, secret); err != nil {
+		r.eventRecorder.Eventf(sa, corev1.EventTypeWarning, reasonFailedProvisioning, "Failed to add an image pull secret to the ServiceAccount: %v", err)
+		return time.Time{}, fmt.Errorf("failed to attach an image pull secret to a ServiceAccount: %w", err)
+	}
+
+	r.eventRecorder.Eventf(sa, corev1.EventTypeNormal, reasonSucceededProvisioning, "Provisioned an image pull secret: %s", secret.GetName())
+
+	return newExp, nil
+}
+
+func (r *serviceAccountReconciler) shouldCreateOrRefreshImagePullSecret(
+	ctx context.Context, logger logr.Logger, sa *corev1.ServiceAccount, name string,
+) (should bool, expiresAt time.Time, _ error) {
 	// Check if the image pull secret exists.
-	secretKey := client.ObjectKey{Namespace: sa.GetNamespace(), Name: secretName(sa)}
-	logger = logger.WithValues("secret", secretKey.Name)
+	secretKey := client.ObjectKey{Namespace: sa.GetNamespace(), Name: name}
 
 	secret := &corev1.Secret{}
 	if err := r.Get(ctx, secretKey, secret); err != nil {
@@ -229,12 +234,11 @@ func (r *serviceAccountReconciler) shouldCreateOrRefreshImagePullSecret(
 }
 
 func (r *serviceAccountReconciler) createOrRefreshImagePullSecret(
-	ctx context.Context, logger logr.Logger, sa *corev1.ServiceAccount,
+	ctx context.Context, logger logr.Logger, sa *corev1.ServiceAccount, name string, principal string,
 ) (_ *corev1.Secret, expiresAt time.Time, _ error) {
 	logger.Info("Creating or refreshing an image pull secret for the ServiceAccount...")
-
 	// Generate an access token for the configured image registry from the ServiceAccount's token.
-	username, token, expiresAt, err := r.generateAccessToken(ctx, sa, sa.Annotations[annotationKeyAudience])
+	username, token, expiresAt, err := r.generateAccessToken(ctx, sa, sa.Annotations[annotationKeyAudience], principal)
 	if err != nil {
 		return nil, time.Time{}, fmt.Errorf(
 			"failed to generate an access token for the configured image registry: %w", err,
@@ -244,7 +248,7 @@ func (r *serviceAccountReconciler) createOrRefreshImagePullSecret(
 
 	// Ensure an image pull secret from the access token.
 	secret, err := buildImagePullSecret(
-		sa, secretName(sa), sa.Annotations[annotationKeyRegistry], username, token, expiresAt,
+		sa, name, sa.Annotations[annotationKeyRegistry], username, token, expiresAt,
 	)
 	if err != nil {
 		return nil, time.Time{}, fmt.Errorf("failed to build image pull secret definition: %w", err)
@@ -329,7 +333,7 @@ func (r *serviceAccountReconciler) imagePullSecretAttached(sa *corev1.ServiceAcc
 }
 
 func (r *serviceAccountReconciler) generateAccessToken(
-	ctx context.Context, sa *corev1.ServiceAccount, audience string,
+	ctx context.Context, sa *corev1.ServiceAccount, audience string, principal string,
 ) (username string, token string, expiresAt time.Time, _ error) {
 	tokenReq := &authenticationv1.TokenRequest{
 		Spec: authenticationv1.TokenRequestSpec{
@@ -341,16 +345,14 @@ func (r *serviceAccountReconciler) generateAccessToken(
 	}
 
 	// AWS.
-	if roleARN := sa.Annotations[annotationKeyAWSRoleARN]; roleARN != "" {
+	if sa.Annotations[annotationKeyAWSRoleARN] != "" {
 		registry := sa.Annotations[annotationKeyRegistry]
-		return r.generateAccessTokenAWS(ctx, tokenReq.Status.Token, registry, roleARN)
+		return r.generateAccessTokenAWS(ctx, tokenReq.Status.Token, registry, principal)
 	}
 
 	// Google.
-	provider := sa.Annotations[annotationKeyGoogleWIDP]
-	saEmail := sa.Annotations[annotationKeyGoogleSA]
-	if provider != "" && saEmail != "" {
-		token, expiresAt, err := r.google.GenerateAccessToken(ctx, tokenReq.Status.Token, provider, saEmail)
+	if provider := sa.Annotations[annotationKeyGoogleWIDP]; provider != "" {
+		token, expiresAt, err := r.google.GenerateAccessToken(ctx, tokenReq.Status.Token, provider, principal)
 		if err != nil {
 			return "", "", time.Time{}, fmt.Errorf("failed to generate a Google service account's access token: %w", err)
 		}
@@ -424,18 +426,20 @@ func (r *serviceAccountReconciler) listImagePullSecretsToCleanup(
 		return nil, fmt.Errorf("failed to list image pull secrets: %w", err)
 	}
 
-	inUse := ""
+	namesInUse := map[string]struct{}{}
 	if hasConfig(sa) {
-		inUse = secretName(sa)
+		principals := resolvePrincipals(sa)
+		for i := range principals {
+			namesInUse[secretName(sa, i)] = struct{}{}
+		}
 	}
-
 	targets := []*corev1.Secret{}
-	for _, secret := range secrets.Items {
-		if secret.GetName() == inUse {
+	for i := range secrets.Items {
+		if _, ok := namesInUse[secrets.Items[i].GetName()]; ok {
 			continue
 		}
 
-		targets = append(targets, &secret)
+		targets = append(targets, &secrets.Items[i])
 	}
 
 	return targets, nil
@@ -469,5 +473,17 @@ func (r *serviceAccountReconciler) detachImagePullSecret(
 		return fmt.Errorf("failed to patch a ServiceAccount: %w", err)
 	}
 
+	return nil
+}
+
+func resolvePrincipals(sa *corev1.ServiceAccount) []string {
+	// Note: AWS and Google providers cannot be used together since they share
+	// the imagepullsecrets.preferred.jp/registry annotation. This function
+	// returns the first non-empty annotation found.
+	for _, key := range []string{annotationKeyAWSRoleARN, annotationKeyGoogleSA} {
+		if raw := sa.Annotations[key]; raw != "" {
+			return strings.Split(raw, ",")
+		}
+	}
 	return nil
 }
