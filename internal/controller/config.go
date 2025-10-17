@@ -49,7 +49,7 @@ func hasConfig(sa *corev1.ServiceAccount) bool {
 	return false
 }
 
-func secretName(sa *corev1.ServiceAccount) string {
+func secretNameBase(sa *corev1.ServiceAccount) string {
 	if name, ok := sa.Annotations[annotationKeySecretName]; ok {
 		return name
 	}
@@ -62,11 +62,11 @@ func secretName(sa *corev1.ServiceAccount) string {
 	return name
 }
 
-func secretNameIndexed(sa *corev1.ServiceAccount, idx int) string {
+func secretName(sa *corev1.ServiceAccount, idx int) string {
 	if idx <= 0 {
-		return secretName(sa)
+		return secretNameBase(sa)
 	}
-	base := secretName(sa)
+	base := secretNameBase(sa)
 	suffix := fmt.Sprintf("-%d", idx)
 	if len(base)+len(suffix) > validation.DNS1123SubdomainMaxLength {
 		base = base[:validation.DNS1123SubdomainMaxLength-len(suffix)]

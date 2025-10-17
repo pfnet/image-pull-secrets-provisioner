@@ -154,7 +154,7 @@ func (r *serviceAccountReconciler) SetupWithManager(mgr ctrl.Manager) error {
 func (r *serviceAccountReconciler) provisionSecretForPrincipal(
 	ctx context.Context, sa *corev1.ServiceAccount, principal string, principalIndex int,
 ) (expiresAt time.Time, _ error) {
-	name := secretNameIndexed(sa, principalIndex)
+	name := secretName(sa, principalIndex)
 	logger := log.FromContext(ctx).WithValues("secret", name, "principal", principal)
 
 	should, exp, err := r.shouldCreateOrRefreshImagePullSecret(ctx, logger, sa, name)
@@ -430,7 +430,7 @@ func (r *serviceAccountReconciler) listImagePullSecretsToCleanup(
 	if hasConfig(sa) {
 		principals := resolvePrincipals(sa)
 		for i := range principals {
-			namesInUse[secretNameIndexed(sa, i)] = struct{}{}
+			namesInUse[secretName(sa, i)] = struct{}{}
 		}
 	}
 	targets := []*corev1.Secret{}
