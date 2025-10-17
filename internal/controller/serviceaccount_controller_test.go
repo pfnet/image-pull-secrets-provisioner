@@ -186,6 +186,57 @@ var _ = Describe("ServiceAccountReconciler", func() {
 				}).WithTimeout(2 * tokenValidity).Should(Succeed()) // 2 x token validity.
 			})
 
+			It("Update a Secret for a new principal", func() {
+				// Create a ServiceAccount.
+				sa := sa.DeepCopy()
+				Expect(k8sClient.Create(ctx, sa)).NotTo(HaveOccurred())
+				objectsToDelete = append(objectsToDelete, sa)
+
+				// Wait for a Secret is created once.
+				outdated := &corev1.Secret{}
+				Eventually(func(g Gomega) {
+					secrets := &corev1.SecretList{}
+					g.Expect(k8sClient.List(
+						ctx,
+						secrets,
+						client.InNamespace(ns),
+						client.MatchingLabels{
+							"imagepullsecrets.preferred.jp/service-account": sa.GetName(),
+						},
+					)).NotTo(HaveOccurred())
+					g.Expect(secrets.Items).To(HaveLen(1))
+
+					outdated = &secrets.Items[0]
+				}).Should(Succeed())
+				Expect(outdated.GetAnnotations()).To(HaveKeyWithValue(
+					"imagepullsecrets.preferred.jp/principal", "imagepullsecret@example.iam.gserviceaccount.com",
+				))
+
+				// Change the principal.
+				orig := sa.DeepCopy()
+				sa.Annotations["imagepullsecrets.preferred.jp/googlecloud-service-account-email"] = "new@example.iam.gserviceaccount.com"
+				Expect(k8sClient.Patch(ctx, sa, client.StrategicMergeFrom(orig))).NotTo(HaveOccurred())
+
+				// Test that the Secret is updated.
+				Eventually(func(g Gomega) {
+					secrets := &corev1.SecretList{}
+					g.Expect(k8sClient.List(
+						ctx,
+						secrets,
+						client.InNamespace(ns),
+						client.MatchingLabels{
+							"imagepullsecrets.preferred.jp/service-account": sa.GetName(),
+						},
+					)).NotTo(HaveOccurred())
+					g.Expect(secrets.Items).To(HaveLen(1))
+
+					g.Expect(secrets.Items[0].GetName()).To(Equal(outdated.GetName()))
+					g.Expect(secrets.Items[0].GetAnnotations()).To(HaveKeyWithValue(
+						"imagepullsecrets.preferred.jp/principal", "new@example.iam.gserviceaccount.com",
+					))
+				}).Should(Succeed())
+			})
+
 			It("Cleanup outdated Secrets", func() {
 				// Create a ServiceAccount.
 				sa := sa.DeepCopy()
@@ -375,6 +426,56 @@ var _ = Describe("ServiceAccountReconciler", func() {
 						g.Expect(actual.Data).NotTo(Equal(secret.Data))
 					}
 				}).WithTimeout(2 * tokenValidity).Should(Succeed())
+			})
+
+			It("Update multiple Secrets for new principals", func() {
+				// Create a ServiceAccount with two emails.
+				sa := sa.DeepCopy()
+				Expect(k8sClient.Create(ctx, sa)).NotTo(HaveOccurred())
+				objectsToDelete = append(objectsToDelete, sa)
+
+				// Wait for two Secrets are created.
+				outdated := &corev1.SecretList{}
+				Eventually(func(g Gomega) {
+					g.Expect(k8sClient.List(
+						ctx,
+						outdated,
+						client.InNamespace(ns),
+						client.MatchingLabels{
+							"imagepullsecrets.preferred.jp/service-account": sa.GetName(),
+						},
+					)).NotTo(HaveOccurred())
+					g.Expect(outdated.Items).To(HaveLen(2))
+				}).Should(Succeed())
+
+				// Change the principals.
+				orig := sa.DeepCopy()
+				sa.Annotations["imagepullsecrets.preferred.jp/googlecloud-service-account-email"] = "sa2@example.iam.gserviceaccount.com,sa1@example.iam.gserviceaccount.com"
+				Expect(k8sClient.Patch(ctx, sa, client.StrategicMergeFrom(orig))).NotTo(HaveOccurred())
+
+				// Test that both Secrets are updated.
+				Eventually(func(g Gomega) {
+					secrets := &corev1.SecretList{}
+					g.Expect(k8sClient.List(
+						ctx,
+						secrets,
+						client.InNamespace(ns),
+						client.MatchingLabels{
+							"imagepullsecrets.preferred.jp/service-account": sa.GetName(),
+						},
+					)).NotTo(HaveOccurred())
+					g.Expect(secrets.Items).To(HaveLen(2))
+
+					g.Expect(secrets.Items[0].GetName()).To(Equal(outdated.Items[0].GetName()))
+					g.Expect(secrets.Items[0].GetAnnotations()).To(HaveKeyWithValue(
+						"imagepullsecrets.preferred.jp/principal", "sa2@example.iam.gserviceaccount.com",
+					))
+
+					g.Expect(secrets.Items[1].GetName()).To(Equal(outdated.Items[1].GetName()))
+					g.Expect(secrets.Items[1].GetAnnotations()).To(HaveKeyWithValue(
+						"imagepullsecrets.preferred.jp/principal", "sa1@example.iam.gserviceaccount.com",
+					))
+				}).Should(Succeed())
 			})
 
 			It("Cleanup a Secret for a removed principal", func() {
