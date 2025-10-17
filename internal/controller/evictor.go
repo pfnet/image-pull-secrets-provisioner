@@ -200,10 +200,6 @@ func (e *evictor) getProvisionedImagePullSecrets(
 		return nil, nil
 	}
 
-	if !hasConfig(sa) {
-		return nil, nil
-	}
-
 	// List image pull secrets using the label selector for efficiency
 	secrets := &corev1.SecretList{}
 	if err := e.List(

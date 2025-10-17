@@ -155,7 +155,7 @@ func (r *serviceAccountReconciler) provisionSecretForPrincipal(
 	ctx context.Context, sa *corev1.ServiceAccount, principal string, principalIndex int,
 ) (expiresAt time.Time, _ error) {
 	name := secretNameIndexed(sa, principalIndex)
-	logger := log.FromContext(ctx).WithValues("secret", name, "accountIndex", principalIndex)
+	logger := log.FromContext(ctx).WithValues("secret", name, "principal", principal)
 
 	should, exp, err := r.shouldCreateOrRefreshImagePullSecret(ctx, logger, sa, name)
 	if err != nil {
