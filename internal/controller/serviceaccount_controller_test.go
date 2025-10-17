@@ -175,6 +175,98 @@ var _ = Describe("ServiceAccountReconciler", func() {
 			}).Should(Succeed())
 		})
 
+		It("Refresh multiple Secrets (two emails)", func() {
+			// Create a ServiceAccount with two emails.
+			sa2 := sa.DeepCopy()
+			sa2.Annotations["imagepullsecrets.preferred.jp/googlecloud-service-account-email"] = "gsa1@example.iam.gserviceaccount.com,gsa2@example.iam.gserviceaccount.com"
+			Expect(k8sClient.Create(ctx, sa2)).NotTo(HaveOccurred())
+			objectsToDelete = append(objectsToDelete, sa2)
+
+			// Wait for two secrets are created.
+			var secrets []*corev1.Secret
+			Eventually(func(g Gomega) {
+				secretList := &corev1.SecretList{}
+				g.Expect(k8sClient.List(
+					ctx,
+					secretList,
+					client.InNamespace(ns),
+					client.MatchingLabels{
+						"imagepullsecrets.preferred.jp/service-account": sa2.GetName(),
+					},
+				)).NotTo(HaveOccurred())
+				g.Expect(secretList.Items).To(HaveLen(2))
+				secrets = []*corev1.Secret{&secretList.Items[0], &secretList.Items[1]}
+			}).Should(Succeed())
+
+			// Test that both Secrets are refreshed.
+			Eventually(func(g Gomega) {
+				for _, secret := range secrets {
+					actual := &corev1.Secret{}
+					g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(secret), actual)).NotTo(HaveOccurred())
+					g.Expect(actual.Data).NotTo(Equal(secret.Data))
+				}
+			}).WithTimeout(2 * tokenValidity).Should(Succeed())
+		})
+
+		It("Cleanup outdated Secrets (multiple principals)", func() {
+			// Create a ServiceAccount with two emails.
+			sa2 := sa.DeepCopy()
+			sa2.Annotations["imagepullsecrets.preferred.jp/googlecloud-service-account-email"] = "gsa1@example.iam.gserviceaccount.com,gsa2@example.iam.gserviceaccount.com"
+			Expect(k8sClient.Create(ctx, sa2)).NotTo(HaveOccurred())
+			objectsToDelete = append(objectsToDelete, sa2)
+
+			// Wait for two secrets are created.
+			Eventually(func(g Gomega) {
+				secrets := &corev1.SecretList{}
+				g.Expect(k8sClient.List(
+					ctx,
+					secrets,
+					client.InNamespace(ns),
+					client.MatchingLabels{
+						"imagepullsecrets.preferred.jp/service-account": sa2.GetName(),
+					},
+				)).NotTo(HaveOccurred())
+				g.Expect(secrets.Items).To(HaveLen(2))
+			}).Should(Succeed())
+
+			// Create an outdated secret.
+			outdated := &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      sa2.GetName() + "-outdated",
+					Namespace: ns,
+					Labels: map[string]string{
+						"imagepullsecrets.preferred.jp/service-account": sa2.GetName(),
+					},
+				},
+				Data: map[string][]byte{".dockerconfigjson": []byte("{}")},
+				Type: corev1.SecretTypeDockerConfigJson,
+			}
+			Expect(k8sClient.Create(ctx, outdated)).NotTo(HaveOccurred())
+			// Note: outdated secret is not added to objectsToDelete because it will be deleted by reconciliation
+
+			// Trigger reconciliation.
+			orig := sa2.DeepCopy()
+			sa2.Annotations["trigger-reconcile"] = time.Now().Format(time.RFC3339)
+			Expect(k8sClient.Patch(ctx, sa2, client.StrategicMergeFrom(orig))).NotTo(HaveOccurred())
+
+			// Expect outdated secret is cleaned up.
+			Eventually(func(g Gomega) {
+				secrets := &corev1.SecretList{}
+				g.Expect(k8sClient.List(
+					ctx,
+					secrets,
+					client.InNamespace(ns),
+					client.MatchingLabels{
+						"imagepullsecrets.preferred.jp/service-account": sa2.GetName(),
+					},
+				)).NotTo(HaveOccurred())
+				g.Expect(secrets.Items).To(HaveLen(2))
+				for _, s := range secrets.Items {
+					g.Expect(s.GetName()).NotTo(Equal(outdated.GetName()))
+				}
+			}).Should(Succeed())
+		})
+
 		It("Create and attach a Secret", func() {
 			// Create a ServiceAccount.
 			sa := sa.DeepCopy()
