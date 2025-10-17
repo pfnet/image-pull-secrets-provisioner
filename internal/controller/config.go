@@ -63,11 +63,11 @@ func secretNameBase(sa *corev1.ServiceAccount) string {
 }
 
 func secretName(sa *corev1.ServiceAccount, idx int) string {
-	if idx <= 0 {
-		return secretNameBase(sa)
-	}
 	base := secretNameBase(sa)
-	suffix := fmt.Sprintf("-%d", idx)
+	suffix := ""
+	if idx > 0 {
+		suffix = fmt.Sprintf("-%d", idx)
+	}
 	if len(base)+len(suffix) > validation.DNS1123SubdomainMaxLength {
 		base = base[:validation.DNS1123SubdomainMaxLength-len(suffix)]
 	}
