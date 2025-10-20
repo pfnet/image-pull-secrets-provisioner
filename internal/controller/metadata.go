@@ -33,6 +33,8 @@ const (
 
 	annotationKeySecretName = metadataKeyPrefix + "secret-name"
 
+	// Annotation for Secrets to store the principal used to provision the Secret.
+	annotationKeyPrincipal = metadataKeyPrefix + "principal"
 	// Annotation for Secrets to store the expiration time.
 	annotationKeyExpiresAt = metadataKeyPrefix + "expires-at"
 

@@ -40,9 +40,10 @@ func TestBuildImagePullSecret(t *testing.T) {
 	registry := "asia-northeast1-docker.pkg.dev"
 	username := "oauth2accesstoken"
 	password := "0xc0bebeef"
+	principal := "sa@example.iam.gserviceaccount.com"
 	expiresAt := time.Now().Add(time.Hour)
 
-	actual, err := buildImagePullSecret(sa, "secret-0", registry, username, password, expiresAt)
+	actual, err := buildImagePullSecret(sa, "secret-0", registry, username, password, principal, expiresAt)
 	if err != nil {
 		t.Errorf("Failed to build an image pull secret: %v", err)
 	}
@@ -54,6 +55,7 @@ func TestBuildImagePullSecret(t *testing.T) {
 			"imagepullsecrets.preferred.jp/service-account": "serviceaccount-0",
 		},
 		Annotations: map[string]string{
+			"imagepullsecrets.preferred.jp/principal":  principal,
 			"imagepullsecrets.preferred.jp/expires-at": expiresAt.Format(time.RFC3339),
 		},
 		OwnerReferences: []metav1.OwnerReference{
