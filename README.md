@@ -8,7 +8,7 @@ The controller creates and refreshes short-lived credentials for container regis
 
 ![Overview](./docs/overview.png)
 
-Image pull secrets provisioner watches Kubernetes ServiceAccounts and performs the following operations.
+Image pull secrets provisioner watches Kubernetes ServiceAccounts and performs the following operations for each principal.
 
 1. Creates a ServiceAccount's token
     - The token is a signed JWT
@@ -100,6 +100,7 @@ rules:
           # Email address of the Google service account to which the Kubernetes ServiceAccount will impersonate
           imagepullsecrets.preferred.jp/googlecloud-service-account-email: SERVICE-ACCOUNT-ID@PROJECT-NAME.iam.gserviceaccount.com
       ```
+    - Principal annotations (`aws-role-arn` and `googlecloud-service-account-email`) can specify multiple principals separated by commas. Multiple image pull secrets will be provisioned for the ServiceAccount, one for each principal.
 3. Use the ServiceAccount for a pod by setting pod's `.spec.serviceAccountName` field
    ```yaml
    apiVersion: v1
