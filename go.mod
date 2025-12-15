@@ -8,13 +8,13 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/sts v1.38.6
 	github.com/go-logr/logr v1.4.3
 	github.com/google/go-cmp v0.7.0
-	github.com/onsi/ginkgo/v2 v2.27.2
-	github.com/onsi/gomega v1.38.2
+	github.com/onsi/ginkgo/v2 v2.27.3
+	github.com/onsi/gomega v1.38.3
 	golang.org/x/oauth2 v0.33.0
 	google.golang.org/api v0.252.0
-	k8s.io/api v0.34.2
-	k8s.io/apimachinery v0.34.2
-	k8s.io/client-go v0.34.2
+	k8s.io/api v0.34.3
+	k8s.io/apimachinery v0.34.3
+	k8s.io/client-go v0.34.3
 	k8s.io/utils v0.0.0-20250820121507-0af2bda4dd1d
 	sigs.k8s.io/controller-runtime v0.22.4
 )
