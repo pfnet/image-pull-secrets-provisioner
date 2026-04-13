@@ -159,7 +159,7 @@ ENVTEST ?= $(LOCALBIN)/setup-envtest
 ## Tool Versions
 KUSTOMIZE_VERSION ?= v5.2.1
 CONTROLLER_TOOLS_VERSION ?= v0.18.0
-SETUP_ENVTEST_VERSION ?= release-0.23
+SETUP_ENVTEST_VERSION ?= v0.0.0-20260305142021-f9589b9f2b9d
 
 .PHONY: kustomize
 kustomize: $(KUSTOMIZE) ## Download kustomize locally if necessary. If wrong version is installed, it will be removed before downloading.
@@ -177,8 +177,12 @@ $(CONTROLLER_GEN): $(LOCALBIN)
 	GOBIN=$(LOCALBIN) go install sigs.k8s.io/controller-tools/cmd/controller-gen@$(CONTROLLER_TOOLS_VERSION)
 
 .PHONY: envtest
-envtest: $(ENVTEST) ## Download envtest-setup locally if necessary.
+envtest: $(ENVTEST) ## Download envtest-setup locally if necessary. If wrong version is installed, it will be removed before downloading.
 $(ENVTEST): $(LOCALBIN)
+	@if test -x $(LOCALBIN)/setup-envtest && ! $(LOCALBIN)/setup-envtest version | grep -q $(SETUP_ENVTEST_VERSION); then \
+		echo "$(LOCALBIN)/setup-envtest version is not expected $(SETUP_ENVTEST_VERSION). Removing it before installing."; \
+		rm -rf $(LOCALBIN)/setup-envtest; \
+	fi
 	test -s $(LOCALBIN)/setup-envtest || GOBIN=$(LOCALBIN) go install sigs.k8s.io/controller-runtime/tools/setup-envtest@$(SETUP_ENVTEST_VERSION)
 
 ##@ Custom targets
