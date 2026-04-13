@@ -179,15 +179,15 @@ $(CONTROLLER_GEN): $(LOCALBIN)
 .PHONY: envtest
 envtest: $(ENVTEST) ## Download envtest-setup locally if necessary. If wrong version is installed, it will be removed before downloading.
 $(ENVTEST): $(LOCALBIN)
-	@if test -x $(LOCALBIN)/setup-envtest && ! $(LOCALBIN)/setup-envtest version | grep -q $(SETUP_ENVTEST_VERSION); then \
-		echo "$(LOCALBIN)/setup-envtest version is not expected $(SETUP_ENVTEST_VERSION). Removing it before installing."; \
-		rm -rf $(LOCALBIN)/setup-envtest; \
+	@if test -x $(ENVTEST) && ! $(ENVTEST) version | grep -q $(SETUP_ENVTEST_VERSION); then \
+		echo "$(ENVTEST) version is not expected $(SETUP_ENVTEST_VERSION). Removing it before installing."; \
+		rm -rf $(ENVTEST); \
 	fi
-	test -s $(LOCALBIN)/setup-envtest || GOBIN=$(LOCALBIN) go install sigs.k8s.io/controller-runtime/tools/setup-envtest@$(SETUP_ENVTEST_VERSION)
+	test -x $(ENVTEST) || GOBIN=$(LOCALBIN) go install sigs.k8s.io/controller-runtime/tools/setup-envtest@$(SETUP_ENVTEST_VERSION)
 
 ##@ Custom targets
 
 .PHONY: credits
 credits: ## Generate credit files.
 	rm -rf credits || true
-	docker build --platform $(CREDITS_PLATFORM) . -f hack/credits.Dockerfile --progress=plain --output=.
+	$(CONTAINER_TOOL) build --platform $(CREDITS_PLATFORM) . -f hack/credits.Dockerfile --progress=plain --output=.
