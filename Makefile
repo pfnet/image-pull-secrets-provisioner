@@ -3,6 +3,8 @@
 IMG ?= controller:latest
 # ENVTEST_K8S_VERSION refers to the version of kubebuilder assets to be downloaded by envtest binary.
 ENVTEST_K8S_VERSION = 1.35.0
+# CREDITS_PLATFORM pins credits generation to the CI architecture so outputs stay deterministic across hosts.
+CREDITS_PLATFORM ?= linux/amd64
 
 # Get the currently used golang install path (in GOPATH/bin, unless GOBIN is set)
 ifeq (,$(shell go env GOBIN))
@@ -184,4 +186,4 @@ $(ENVTEST): $(LOCALBIN)
 .PHONY: credits
 credits: ## Generate credit files.
 	rm -rf credits || true
-	docker build . -f hack/credits.Dockerfile --progress=plain --output=.
+	docker build --platform $(CREDITS_PLATFORM) . -f hack/credits.Dockerfile --progress=plain --output=.
