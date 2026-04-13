@@ -140,6 +140,13 @@ var _ = Describe("ServiceAccountReconciler", func() {
 					secret = &secrets.Items[0]
 				}).Should(Succeed())
 
+				// Wait for the initial reconciliation to finish attaching the Secret.
+				Eventually(func(g Gomega) {
+					actual := &corev1.ServiceAccount{}
+					g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(sa), actual)).NotTo(HaveOccurred())
+					g.Expect(actual.ImagePullSecrets).To(WithTransform(extractNames, ConsistOf("static", secret.GetName())))
+				}).Should(Succeed())
+
 				// Test that the Secret is not refreshed while it is valid.
 				Consistently(func(g Gomega) {
 					orig := sa.DeepCopy()
