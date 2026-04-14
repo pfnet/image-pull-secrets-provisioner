@@ -2,7 +2,9 @@
 # Image URL to use all building/pushing image targets
 IMG ?= controller:latest
 # ENVTEST_K8S_VERSION refers to the version of kubebuilder assets to be downloaded by envtest binary.
-ENVTEST_K8S_VERSION = 1.34.0
+ENVTEST_K8S_VERSION = 1.35.0
+# CREDITS_PLATFORM pins credits generation to the CI architecture so outputs stay deterministic across hosts.
+CREDITS_PLATFORM ?= linux/amd64
 
 # Get the currently used golang install path (in GOPATH/bin, unless GOBIN is set)
 ifeq (,$(shell go env GOBIN))
@@ -157,6 +159,7 @@ ENVTEST ?= $(LOCALBIN)/setup-envtest
 ## Tool Versions
 KUSTOMIZE_VERSION ?= v5.2.1
 CONTROLLER_TOOLS_VERSION ?= v0.18.0
+SETUP_ENVTEST_VERSION ?= v0.0.0-20260305142021-f9589b9f2b9d
 
 .PHONY: kustomize
 kustomize: $(KUSTOMIZE) ## Download kustomize locally if necessary. If wrong version is installed, it will be removed before downloading.
@@ -174,13 +177,17 @@ $(CONTROLLER_GEN): $(LOCALBIN)
 	GOBIN=$(LOCALBIN) go install sigs.k8s.io/controller-tools/cmd/controller-gen@$(CONTROLLER_TOOLS_VERSION)
 
 .PHONY: envtest
-envtest: $(ENVTEST) ## Download envtest-setup locally if necessary.
+envtest: $(ENVTEST) ## Download envtest-setup locally if necessary. If wrong version is installed, it will be removed before downloading.
 $(ENVTEST): $(LOCALBIN)
-	test -s $(LOCALBIN)/setup-envtest || GOBIN=$(LOCALBIN) go install sigs.k8s.io/controller-runtime/tools/setup-envtest@latest
+	@if test -x $(ENVTEST) && ! $(ENVTEST) version | grep -q $(SETUP_ENVTEST_VERSION); then \
+		echo "$(ENVTEST) version is not expected $(SETUP_ENVTEST_VERSION). Removing it before installing."; \
+		rm -rf $(ENVTEST); \
+	fi
+	test -x $(ENVTEST) || GOBIN=$(LOCALBIN) go install sigs.k8s.io/controller-runtime/tools/setup-envtest@$(SETUP_ENVTEST_VERSION)
 
 ##@ Custom targets
 
 .PHONY: credits
 credits: ## Generate credit files.
 	rm -rf credits || true
-	docker build . -f hack/credits.Dockerfile --progress=plain --output=.
+	$(CONTAINER_TOOL) build --platform $(CREDITS_PLATFORM) . -f hack/credits.Dockerfile --progress=plain --output=.
