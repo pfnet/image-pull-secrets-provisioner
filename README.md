@@ -228,6 +228,7 @@ data "aws_iam_policy_document" "repository_policy" {
     actions = [
       "ecr:BatchGetImage",
       "ecr:GetDownloadUrlForLayer",
+      "ecr:BatchCheckLayerAvailability",
     ]
   }
 }
