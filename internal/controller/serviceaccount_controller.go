@@ -36,6 +36,34 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 )
 
+const (
+	minExpirationGracePeriod = time.Minute
+
+	// Cap the maximum token lifetime to 45 minutes to prevent tokens from reaching their maximum lifetime of 1 hour.
+	maxExpirationGracePeriod = 45 * time.Minute
+)
+
+type ServiceAccountReconcilerConfig struct {
+	ExpirationGracePeriod time.Duration
+}
+
+func NewDefaultServiceAccountReconcilerConfig() *ServiceAccountReconcilerConfig {
+	return &ServiceAccountReconcilerConfig{
+		ExpirationGracePeriod: minExpirationGracePeriod,
+	}
+}
+
+func (c *ServiceAccountReconcilerConfig) validate() error {
+	if c.ExpirationGracePeriod < minExpirationGracePeriod || c.ExpirationGracePeriod > maxExpirationGracePeriod {
+		return fmt.Errorf(
+			"expiration grace period must be between %v and %v: %v",
+			minExpirationGracePeriod, maxExpirationGracePeriod, c.ExpirationGracePeriod,
+		)
+	}
+
+	return nil
+}
+
 type serviceAccountReconciler struct {
 	client.Client
 	*runtime.Scheme
@@ -52,7 +80,15 @@ type serviceAccountReconciler struct {
 // the ServiceAccount can pull container images using the secret without specifying .spec.imagePullSecrets field.
 func NewServiceAccountReconciler(
 	ctx context.Context, client client.Client, scheme *runtime.Scheme, eventRecorder record.EventRecorder,
+	cfg *ServiceAccountReconcilerConfig,
 ) (*serviceAccountReconciler, error) {
+	if cfg == nil {
+		return nil, errors.New("cfg must not be nil")
+	}
+	if err := cfg.validate(); err != nil {
+		return nil, err
+	}
+
 	g, err := newGoogle(ctx)
 	if err != nil {
 		return nil, err
@@ -64,7 +100,7 @@ func NewServiceAccountReconciler(
 		eventRecorder:         eventRecorder,
 		aws:                   newAWS(),
 		google:                g,
-		expirationGracePeriod: time.Minute,
+		expirationGracePeriod: cfg.ExpirationGracePeriod,
 	}, nil
 }
 
