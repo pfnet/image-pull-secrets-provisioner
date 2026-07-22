@@ -19,6 +19,7 @@ package main
 import (
 	"flag"
 	"os"
+	"time"
 
 	// Import all Kubernetes client auth plugins (e.g. Azure, GCP, OIDC, etc.)
 	// to ensure that exec-entrypoint and run can make use of them.
@@ -57,6 +58,7 @@ func main() {
 	var enableLeaderElection bool
 	var probeAddr string
 	var disablePodEviction bool
+	var expirationGracePeriodMinutes int
 	flag.StringVar(&metricsAddr, "metrics-bind-address", ":8080", "The address the metric endpoint binds to.")
 	flag.StringVar(&probeAddr, "health-probe-bind-address", ":8081", "The address the probe endpoint binds to.")
 	flag.BoolVar(&enableLeaderElection, "leader-elect", false,
@@ -65,6 +67,8 @@ func main() {
 	flag.BoolVar(&disablePodEviction, "disable-pod-eviction", false,
 		"Disable evicting pods that are failing to pull container images"+
 			" because they do not have an image pull secret provisioned for their ServiceAccount.")
+	flag.IntVar(&expirationGracePeriodMinutes, "expiration-grace-period-minutes", 1,
+		"The expiration grace period for image pull secrets in minutes. The value must be between 1 and 45.")
 	opts := zap.Options{
 		Development: true,
 	}
@@ -117,12 +121,16 @@ func main() {
 	}
 
 	ctx := ctrl.SetupSignalHandler()
+	saReconcilerConfig := controller.NewDefaultServiceAccountReconcilerConfig()
+	saReconcilerConfig.ExpirationGracePeriod = time.Duration(expirationGracePeriodMinutes) * time.Minute
+	setupLog.Info("ServiceAccountReconcilerConfig", "ExpirationGracePeriod", saReconcilerConfig.ExpirationGracePeriod)
 
 	if sa, err := controller.NewServiceAccountReconciler(
 		ctx,
 		mgr.GetClient(),
 		mgr.GetScheme(),
 		mgr.GetEventRecorderFor("image-pull-secrets-provisioner"),
+		saReconcilerConfig,
 	); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "ServiceAccount")
 		os.Exit(1)

@@ -676,3 +676,48 @@ var _ = Describe("ServiceAccountReconciler", func() {
 		// Other test cases are omitted because they are covered by the Google test cases.
 	})
 })
+
+var _ = Describe("ServiceAccountReconcilerConfig", func() {
+	Describe("NewDefaultServiceAccountReconcilerConfig", func() {
+		It("returns a config that passes validation", func() {
+			cfg := NewDefaultServiceAccountReconcilerConfig()
+			Expect(cfg.ExpirationGracePeriod).To(Equal(time.Minute))
+			Expect(cfg.validate()).To(Succeed())
+		})
+	})
+
+	DescribeTable("validate",
+		func(period time.Duration, expectError bool) {
+			cfg := &ServiceAccountReconcilerConfig{ExpirationGracePeriod: period}
+			err := cfg.validate()
+			if expectError {
+				Expect(err).To(HaveOccurred())
+			} else {
+				Expect(err).NotTo(HaveOccurred())
+			}
+		},
+		Entry("shorter than the minimum", 30*time.Second, true),
+		Entry("negative", -time.Minute, true),
+		Entry("at the minimum", time.Minute, false),
+		Entry("between the minimum and the maximum", 10*time.Minute, false),
+		Entry("at the maximum", 45*time.Minute, false),
+		Entry("longer than the maximum", 46*time.Minute, true),
+	)
+
+	Describe("NewServiceAccountReconciler", func() {
+		It("returns an error when cfg is nil", func() {
+			r, err := NewServiceAccountReconciler(context.Background(), nil, nil, nil, nil)
+			Expect(err).To(HaveOccurred())
+			Expect(r).To(BeNil())
+		})
+
+		It("returns an error when cfg is invalid", func() {
+			r, err := NewServiceAccountReconciler(
+				context.Background(), nil, nil, nil,
+				&ServiceAccountReconcilerConfig{ExpirationGracePeriod: time.Second},
+			)
+			Expect(err).To(HaveOccurred())
+			Expect(r).To(BeNil())
+		})
+	})
+})
