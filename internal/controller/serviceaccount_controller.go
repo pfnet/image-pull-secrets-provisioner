@@ -39,7 +39,7 @@ import (
 const (
 	minExpirationGracePeriod = time.Minute
 
-	// Cap the maximum token lifetime to 45 minutes to prevent tokens from reaching their maximum lifetime of 1 hour.
+	// Cap the maximum expiration grace period to 45 minutes to avoid using tokens close to their 1 hour maximum lifetime.
 	maxExpirationGracePeriod = 45 * time.Minute
 )
 
