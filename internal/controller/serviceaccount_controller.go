@@ -163,7 +163,7 @@ func (r *serviceAccountReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	if err != nil {
 		r.eventRecorder.Eventf(
 			sa, nil, corev1.EventTypeWarning, reasonFailedDecommissioning, actionDecommission,
-			"Failed to decommissioning outdated image pull secrets: %v", err,
+			"Failed to decommission outdated image pull secrets: %v", err,
 		)
 		logger.Error(err, "failed to cleanup outdated image pull secrets")
 		return ctrl.Result{}, err
