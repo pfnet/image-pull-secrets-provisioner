@@ -26,7 +26,7 @@ import (
 	policyv1 "k8s.io/api/policy/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/client-go/tools/record"
+	"k8s.io/client-go/tools/events"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -37,7 +37,7 @@ import (
 type evictor struct {
 	client.Client
 	*runtime.Scheme
-	eventRecorder record.EventRecorder
+	eventRecorder events.EventRecorder
 	// requeueAfter is the interval to requeue the reconciliation to reevaluate pods or to retry eviction that failed
 	// due to PodDisruptionBudget violation.
 	// TODO: Split into two fields if we need to set different intervals for each case.
@@ -47,7 +47,7 @@ type evictor struct {
 // NewEvictor creates a new ServiceAccount reconciler that evicts pods that are failing to pull container images because
 // they do not have an image pull secret provisioned for their ServiceAccount.
 func NewEvictor(
-	client client.Client, scheme *runtime.Scheme, eventRecorder record.EventRecorder,
+	client client.Client, scheme *runtime.Scheme, eventRecorder events.EventRecorder,
 ) *evictor {
 	return &evictor{
 		Client:        client,
@@ -71,6 +71,9 @@ const (
 	// Event reasons.
 	reasonFailedEviction = "FailedEvictionForImagePullSecret"
 	reasonEvicted        = "EvictedForImagePullSecret"
+
+	// Event actions.
+	actionEvict = "Evict"
 )
 
 func (e *evictor) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
@@ -131,7 +134,7 @@ func (e *evictor) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result,
 		if err := e.SubResource("eviction").Create(ctx, pod, &policyv1.Eviction{}); err != nil {
 			if apierrors.IsTooManyRequests(err) {
 				e.eventRecorder.Eventf(
-					pod, corev1.EventTypeWarning, reasonFailedEviction,
+					pod, nil, corev1.EventTypeWarning, reasonFailedEviction, actionEvict,
 					"Eviction failed due to PodDisruptionBudget violation: %v", err,
 				)
 				logger.Info("Eviction failed due to PodDisruptionBudget violation: " + err.Error())
@@ -139,15 +142,15 @@ func (e *evictor) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result,
 				continue
 			}
 
-			e.eventRecorder.Eventf(pod, corev1.EventTypeWarning, reasonFailedEviction, "Eviction failed: %v", err)
+			e.eventRecorder.Eventf(pod, nil, corev1.EventTypeWarning, reasonFailedEviction, actionEvict, "Eviction failed: %v", err)
 			logger.Error(err, "failed to evict a pod")
 			// It is OK to throw away old error because it was logged.
 			rerr = err
 			continue
 		}
 
-		e.eventRecorder.Event(
-			pod, corev1.EventTypeNormal, reasonEvicted,
+		e.eventRecorder.Eventf(
+			pod, nil, corev1.EventTypeNormal, reasonEvicted, actionEvict,
 			"Evicted because the pod is failing to pull container images"+
 				" and does not have an image pull secret provisioned for its ServiceAccount.",
 		)

@@ -29,7 +29,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/client-go/tools/record"
+	"k8s.io/client-go/tools/events"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
@@ -67,7 +67,7 @@ func (c *ServiceAccountReconcilerConfig) validate() error {
 type serviceAccountReconciler struct {
 	client.Client
 	*runtime.Scheme
-	eventRecorder record.EventRecorder
+	eventRecorder events.EventRecorder
 	aws           aws
 	google        google
 	// Grace period for refreshing image pull secrets before they expires.
@@ -79,7 +79,7 @@ type serviceAccountReconciler struct {
 // Image pull secrets are attached to a ServiceAccount (i.e. registered with .imagePullSecrets field) so that pods using
 // the ServiceAccount can pull container images using the secret without specifying .spec.imagePullSecrets field.
 func NewServiceAccountReconciler(
-	ctx context.Context, client client.Client, scheme *runtime.Scheme, eventRecorder record.EventRecorder,
+	ctx context.Context, client client.Client, scheme *runtime.Scheme, eventRecorder events.EventRecorder,
 	cfg *ServiceAccountReconcilerConfig,
 ) (*serviceAccountReconciler, error) {
 	if cfg == nil {
@@ -115,6 +115,10 @@ const (
 
 	reasonFailedDecommissioning    = "FailedDecommissioningImagePullSecret"
 	reasonSucceededDecommissioning = "DecommissionedImagePullSecret"
+
+	// Event actions.
+	actionProvision    = "Provision"
+	actionDecommission = "Decommission"
 )
 
 func (r *serviceAccountReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
@@ -158,8 +162,8 @@ func (r *serviceAccountReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	decommissioned, err := r.cleanupImagePullSecrets(ctx, logger, sa)
 	if err != nil {
 		r.eventRecorder.Eventf(
-			sa, corev1.EventTypeWarning, reasonFailedDecommissioning,
-			"Failed to decommissioning outdated image pull secrets: %v", err,
+			sa, nil, corev1.EventTypeWarning, reasonFailedDecommissioning, actionDecommission,
+			"Failed to decommission outdated image pull secrets: %v", err,
 		)
 		logger.Error(err, "failed to cleanup outdated image pull secrets")
 		return ctrl.Result{}, err
@@ -167,7 +171,7 @@ func (r *serviceAccountReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 
 	if len(decommissioned) > 0 {
 		r.eventRecorder.Eventf(
-			sa, corev1.EventTypeNormal, reasonSucceededDecommissioning,
+			sa, nil, corev1.EventTypeNormal, reasonSucceededDecommissioning, actionDecommission,
 			"Decommissioned outdated image pull secrets: %v", decommissioned,
 		)
 	}
@@ -204,16 +208,16 @@ func (r *serviceAccountReconciler) provisionImagePullSecretForPrincipal(
 
 	secret, newExp, err := r.createOrRefreshImagePullSecret(ctx, logger, sa, secretName, principal)
 	if err != nil {
-		r.eventRecorder.Eventf(sa, corev1.EventTypeWarning, reasonFailedProvisioning, "Failed to create or refresh an image pull secret: %v", err)
+		r.eventRecorder.Eventf(sa, nil, corev1.EventTypeWarning, reasonFailedProvisioning, actionProvision, "Failed to create or refresh an image pull secret: %v", err)
 		return time.Time{}, fmt.Errorf("failed to create or refresh an image pull secret: %w", err)
 	}
 
 	if err := r.attachImagePullSecret(ctx, logger, sa, secret); err != nil {
-		r.eventRecorder.Eventf(sa, corev1.EventTypeWarning, reasonFailedProvisioning, "Failed to add an image pull secret to the ServiceAccount: %v", err)
+		r.eventRecorder.Eventf(sa, nil, corev1.EventTypeWarning, reasonFailedProvisioning, actionProvision, "Failed to add an image pull secret to the ServiceAccount: %v", err)
 		return time.Time{}, fmt.Errorf("failed to attach an image pull secret to a ServiceAccount: %w", err)
 	}
 
-	r.eventRecorder.Eventf(sa, corev1.EventTypeNormal, reasonSucceededProvisioning, "Provisioned an image pull secret: %s", secret.GetName())
+	r.eventRecorder.Eventf(sa, nil, corev1.EventTypeNormal, reasonSucceededProvisioning, actionProvision, "Provisioned an image pull secret: %s", secret.GetName())
 
 	return newExp, nil
 }

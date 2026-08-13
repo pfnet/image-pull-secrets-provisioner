@@ -129,7 +129,7 @@ func main() {
 		ctx,
 		mgr.GetClient(),
 		mgr.GetScheme(),
-		mgr.GetEventRecorderFor("image-pull-secrets-provisioner"),
+		mgr.GetEventRecorder("image-pull-secrets-provisioner"),
 		saReconcilerConfig,
 	); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "ServiceAccount")
@@ -143,7 +143,7 @@ func main() {
 		if err = controller.NewEvictor(
 			mgr.GetClient(),
 			mgr.GetScheme(),
-			mgr.GetEventRecorderFor("image-pull-secrets-provisioner"),
+			mgr.GetEventRecorder("image-pull-secrets-provisioner"),
 		).SetupWithManager(mgr); err != nil {
 			setupLog.Error(err, "unable to create evictor")
 			os.Exit(1)

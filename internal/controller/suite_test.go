@@ -116,7 +116,7 @@ var _ = BeforeSuite(func() {
 	err = (&serviceAccountReconciler{
 		Client:                k8sManager.GetClient(),
 		Scheme:                k8sManager.GetScheme(),
-		eventRecorder:         k8sManager.GetEventRecorderFor("image-pull-secrets-provisioner"),
+		eventRecorder:         k8sManager.GetEventRecorder("image-pull-secrets-provisioner"),
 		aws:                   &awsMock{},
 		google:                &gMock{},
 		expirationGracePeriod: 0, // To test skipping refreshing Secrets.
@@ -126,7 +126,7 @@ var _ = BeforeSuite(func() {
 	err = (&evictor{
 		Client:        k8sManager.GetClient(),
 		Scheme:        k8sManager.GetScheme(),
-		eventRecorder: k8sManager.GetEventRecorderFor("image-pull-secrets-provisioner"),
+		eventRecorder: k8sManager.GetEventRecorder("image-pull-secrets-provisioner"),
 		requeueAfter:  100 * time.Millisecond,
 	}).SetupWithManager(k8sManager)
 	Expect(err).NotTo(HaveOccurred())
