@@ -2,7 +2,7 @@
 # Image URL to use all building/pushing image targets
 IMG ?= controller:latest
 # ENVTEST_K8S_VERSION refers to the version of kubebuilder assets to be downloaded by envtest binary.
-ENVTEST_K8S_VERSION = 1.35.0
+ENVTEST_K8S_VERSION = 1.36.0
 # CREDITS_PLATFORM pins credits generation to the CI architecture so outputs stay deterministic across hosts.
 CREDITS_PLATFORM ?= linux/amd64
 
@@ -67,7 +67,7 @@ test: manifests generate fmt vet envtest ## Run tests.
 	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) --bin-dir $(LOCALBIN) -p path)" go test ./... -coverprofile cover.out
 
 GOLANGCI_LINT = $(shell pwd)/bin/golangci-lint
-GOLANGCI_LINT_VERSION ?= v1.63.4
+GOLANGCI_LINT_VERSION ?= v2.12.2
 golangci-lint:
 	@[ -f $(GOLANGCI_LINT) ] || { \
 	set -e ;\
@@ -158,8 +158,8 @@ ENVTEST ?= $(LOCALBIN)/setup-envtest
 
 ## Tool Versions
 KUSTOMIZE_VERSION ?= v5.2.1
-CONTROLLER_TOOLS_VERSION ?= v0.18.0
-SETUP_ENVTEST_VERSION ?= v0.0.0-20260305142021-f9589b9f2b9d
+CONTROLLER_TOOLS_VERSION ?= v0.21.0
+SETUP_ENVTEST_VERSION ?= v0.24.2-0.20260713111223-0f529e22d5c0
 
 .PHONY: kustomize
 kustomize: $(KUSTOMIZE) ## Download kustomize locally if necessary. If wrong version is installed, it will be removed before downloading.
